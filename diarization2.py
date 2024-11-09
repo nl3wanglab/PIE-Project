@@ -7,30 +7,26 @@ import torchaudio
 from transformers import pipeline as transformers_pipeline, AutoModelForSpeechSeq2Seq, AutoTokenizer, AutoFeatureExtractor
 from huggingface_hub import login
 
-# Hugging Face authentication
-auth_token = "[API_KEY]"
+token_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "token.json")
+with open(token_path, 'r') as token_file:
+    auth_token = json.load(token_file)["HUGGING_FACE_TOKEN"]
 login(auth_token)
 
-# Define paths
 model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
 os.makedirs(model_dir, exist_ok=True)
-
 audio_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_audio.wav")
 cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "diarization_cache.json")
 
-# Load diarization model
 diarization_pipeline = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
     cache_dir=model_dir,
     use_auth_token=auth_token,
 )
 
-# Load model components for transcription
 model = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-small", cache_dir=model_dir, use_auth_token=auth_token)
 tokenizer = AutoTokenizer.from_pretrained("openai/whisper-small", cache_dir=model_dir, use_auth_token=auth_token)
 feature_extractor = AutoFeatureExtractor.from_pretrained("openai/whisper-small", cache_dir=model_dir, use_auth_token=auth_token)
 
-# Initialize the ASR pipeline with the locally cached model components
 transcription_pipeline = transformers_pipeline(
     "automatic-speech-recognition",
     model=model,
@@ -38,14 +34,12 @@ transcription_pipeline = transformers_pipeline(
     feature_extractor=feature_extractor
 )
 
-# Check if diarization is cached
 if os.path.exists(cache_path):
     with open(cache_path, 'r') as f:
         diarization_data = json.load(f)
 else:
-    # Run speaker diarization with progress tracking and cache the results
     with ProgressHook() as hook:
-        diarization = diarization_pipeline(audio_path, hook=hook)
+        diarization = diarization_pipeline(audio_path, hook=hook, num_speakers=2)
     diarization_data = [
         {"start": turn.start, "end": turn.end, "speaker": speaker}
         for turn, _, speaker in diarization.itertracks(yield_label=True)
@@ -53,7 +47,6 @@ else:
     with open(cache_path, 'w') as f:
         json.dump(diarization_data, f)
 
-# Process each segment
 for segment_info in diarization_data:
     start_time = segment_info["start"]
     end_time = segment_info["end"]
