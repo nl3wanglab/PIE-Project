@@ -4,6 +4,7 @@ import numpy as np
 from pyannote.audio import Pipeline
 from pyannote.audio.pipelines.utils.hook import ProgressHook
 import torchaudio
+from tqdm import tqdm
 from transformers import pipeline as transformers_pipeline, AutoModelForSpeechSeq2Seq, AutoTokenizer, AutoFeatureExtractor
 from huggingface_hub import login
 
@@ -23,9 +24,10 @@ diarization_pipeline = Pipeline.from_pretrained(
     use_auth_token=auth_token,
 )
 
-model = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-small", cache_dir=model_dir, use_auth_token=auth_token)
-tokenizer = AutoTokenizer.from_pretrained("openai/whisper-small", cache_dir=model_dir, use_auth_token=auth_token)
-feature_extractor = AutoFeatureExtractor.from_pretrained("openai/whisper-small", cache_dir=model_dir, use_auth_token=auth_token)
+whisper_model = "openai/whisper-tiny"
+model = AutoModelForSpeechSeq2Seq.from_pretrained(whisper_model, cache_dir=model_dir, use_auth_token=auth_token)
+tokenizer = AutoTokenizer.from_pretrained(whisper_model, cache_dir=model_dir, use_auth_token=auth_token)
+feature_extractor = AutoFeatureExtractor.from_pretrained(whisper_model, cache_dir=model_dir, use_auth_token=auth_token)
 
 transcription_pipeline = transformers_pipeline(
     "automatic-speech-recognition",
@@ -47,21 +49,36 @@ else:
     with open(cache_path, 'w') as f:
         json.dump(diarization_data, f)
 
+# Load the full audio once
+full_audio, sample_rate = torchaudio.load(audio_path)
+
+segments = []
+segment_infos = []
+
 for segment_info in diarization_data:
     start_time = segment_info["start"]
     end_time = segment_info["end"]
     speaker = segment_info["speaker"]
 
-    # Load the specific segment from the audio file
-    segment, _ = torchaudio.load(audio_path, frame_offset=int(start_time * 16000), num_frames=int((end_time - start_time) * 16000))
-
-    # Convert segment to numpy array for compatibility with the transcription pipeline
+    start_sample = int(start_time * sample_rate)
+    end_sample = int(end_time * sample_rate)
+    segment = full_audio[:, start_sample:end_sample]
     segment_np = segment.squeeze().numpy()
+    segments.append(segment_np)
+    segment_infos.append(segment_info)
 
-    # Transcribe without specifying sampling_rate in the pipeline call
+# Transcribe segments with progress bar
+transcriptions = []
+print("Transcribing audio segments:")
+for segment_np in tqdm(segments, desc="Transcribing", unit="segment"):
     transcription = transcription_pipeline(segment_np)
+    transcriptions.append(transcription)
 
-    # Print the speaker and corresponding transcription
+for segment_info, transcription in zip(segment_infos, transcriptions):
+    start_time = segment_info["start"]
+    end_time = segment_info["end"]
+    speaker = segment_info["speaker"]
+
     print(f"{start_time:.1f}s - {end_time:.1f}s: Speaker {speaker}")
     print(f"Transcription: {transcription['text']}\n")
 
