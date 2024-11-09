@@ -15,8 +15,8 @@ login(auth_token)
 model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
 os.makedirs(model_dir, exist_ok=True)
 
-model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_audio.wav")
-model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "diarization_cache.json")
+audio_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_audio.wav")
+cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "diarization_cache.json")
 
 # Load diarization model
 diarization_pipeline = Pipeline.from_pretrained(
