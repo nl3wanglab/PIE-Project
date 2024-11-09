@@ -67,6 +67,11 @@ for segment_info in diarization_data:
     segments.append(segment_np)
     segment_infos.append(segment_info)
 
+def seconds_to_min_sec(seconds):
+    minutes = int(seconds // 60)
+    seconds = seconds % 60
+    return f"{minutes}m {seconds:.1f}s"
+
 # Transcribe segments with progress bar
 transcriptions = []
 print("Transcribing audio segments:")
@@ -79,6 +84,6 @@ for segment_info, transcription in zip(segment_infos, transcriptions):
     end_time = segment_info["end"]
     speaker = segment_info["speaker"]
 
-    print(f"{start_time:.1f}s - {end_time:.1f}s: Speaker {speaker}")
+    print(f"{seconds_to_min_sec(start_time)}s - {seconds_to_min_sec(end_time)}s: Speaker {speaker}")
     print(f"Transcription: {transcription['text']}\n")
 
