@@ -14,7 +14,7 @@
         <div class="row" id="video-cards">
             <!-- Video cards will be dynamically inserted here -->
             <div class="col-md-4 mb-4">
-                <div class="card add-video-card" onclick="addVideo()">
+                <div class="card add-video-card" data-toggle="modal" data-target="#settingsModal">
                     <div class="card-body text-center">
                         <h5 class="card-title">+ Add Video</h5>
                     </div>
@@ -22,7 +22,33 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="settingsModalLabel">Add Video Settings</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="videoSettingsForm">
+                        <div class="form-group">
+                            <label for="videoFile">Select Video File</label>
+                            <input type="file" class="form-control-file" id="videoFile" accept="video/*" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Submit</button>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
