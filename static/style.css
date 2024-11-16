@@ -1,0 +1,26 @@
+body {
+    background-color: #f8f9fa;
+}
+
+h1 {
+    font-weight: bold;
+}
+
+.card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+.card:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.add-video-card {
+    background-color: #e9ecef;
+    border: 2px dashed #6c757d;
+}
+
+.add-video-card:hover {
+    background-color: #dee2e6;
+} 
