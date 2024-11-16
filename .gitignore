@@ -3,3 +3,5 @@ PIEA01_play.MP4
 model/
 token.json
 diarization_cache.json
+diarization_transcript.txt
+full_transcription.txt

@@ -24,7 +24,7 @@ diarization_pipeline = Pipeline.from_pretrained(
     use_auth_token=auth_token,
 )
 
-whisper_model = "openai/whisper-tiny"
+whisper_model = "openai/whisper-tiny" # large-v3-turbo
 model = AutoModelForSpeechSeq2Seq.from_pretrained(whisper_model, cache_dir=model_dir, use_auth_token=auth_token)
 tokenizer = AutoTokenizer.from_pretrained(whisper_model, cache_dir=model_dir, use_auth_token=auth_token)
 feature_extractor = AutoFeatureExtractor.from_pretrained(whisper_model, cache_dir=model_dir, use_auth_token=auth_token)
@@ -67,6 +67,10 @@ for i in tqdm(range(num_chunks), desc="Transcribing", unit="chunk"):
     transcription = transcription_pipeline(audio_chunk, return_timestamps=True)['text']
     full_transcription += transcription
 
+# Write the full transcription to a file
+with open("full_transcription.txt", "w") as f:
+    f.write(full_transcription)
+
 # Function to map time to text index
 def time_to_text_index(time, sample_rate, full_transcription):
     # Assuming the transcription is evenly distributed, calculate the index
@@ -74,6 +78,12 @@ def time_to_text_index(time, sample_rate, full_transcription):
     total_duration = total_samples / sample_rate
     text_length = len(full_transcription)
     return int((time / total_duration) * text_length)
+
+# Function to convert seconds to minutes and seconds
+def seconds_to_min_sec(seconds):
+    minutes = int(seconds // 60)
+    seconds = seconds % 60
+    return f"{minutes}m {seconds:.1f}s"
 
 # Process diarization data
 segments = []
@@ -91,10 +101,15 @@ for segment_info in tqdm(diarization_data, desc="Processing segments", unit="seg
     segments.append(segment_text)
     segment_infos.append(segment_info)
 
-def seconds_to_min_sec(seconds):
-    minutes = int(seconds // 60)
-    seconds = seconds % 60
-    return f"{minutes}m {seconds:.1f}s"
+# Write the diarization transcript to a file
+with open("diarization_transcript.txt", "w") as f:
+    for segment_info, segment_text in zip(segment_infos, segments):
+        start_time = segment_info["start"]
+        end_time = segment_info["end"]
+        speaker = segment_info["speaker"]
+
+        f.write(f"{seconds_to_min_sec(start_time)}s - {seconds_to_min_sec(end_time)}s: Speaker {speaker}\n")
+        f.write(f"Transcription: {segment_text}\n\n")
 
 # Print the transcriptions for each segment
 for segment_info, segment_text in zip(segment_infos, segments):
