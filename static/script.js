@@ -2,8 +2,8 @@ function addVideo() {
     // This function is now handled by the modal
 }
 
-function viewEditVideo() {
-    alert('View/Edit functionality to be implemented.');
+function viewEditVideo(videoPath) {
+    window.location.href = `video-viewer.html?video=${encodeURIComponent(videoPath)}`;
 }
 
 function arrayBufferToBase64(buffer) {
@@ -185,6 +185,17 @@ function updateCardWithMedia(loadingCard, filename, mediaUrl, isVideo) {
             e.stopPropagation();
         });
     }
+
+    const viewButton = document.createElement('button');
+    viewButton.className = 'btn btn-primary mt-2 mr-2';
+    viewButton.textContent = 'View';
+    viewButton.onclick = (e) => {
+        e.stopPropagation();
+        viewEditVideo(mediaUrl);
+    };
+    
+    const deleteButton = loadingCard.querySelector('.btn-danger');
+    deleteButton.parentNode.insertBefore(viewButton, deleteButton);
 }
 
 // Example function to determine if a file is a video

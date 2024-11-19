@@ -17,6 +17,9 @@ UPLOAD_FOLDER = os.path.join('static', 'uploaded_videos')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 class API:
+    def __init__(self):
+        self.upload_folder = os.path.join('static', 'uploaded_videos')
+        
     def upload_video_chunk(self, file_data, filename, is_first_chunk):
         try:
             # Decode the base64 file data
@@ -38,6 +41,60 @@ class API:
     def test_connection(self):
         logging.info("JavaScript successfully called Python!")
         return "Connection successful"
+
+    def get_pure_transcript(self, video_name):
+        try:
+            transcript_path = os.path.join("full_transcription.txt")
+            if os.path.exists(transcript_path):
+                with open(transcript_path, 'r', encoding='utf-8') as f:
+                    return {"success": True, "text": f.read()}
+            else:
+                return {"success": False, "error": "Transcript file not found"}
+        except Exception as e:
+            logging.error(f"Error reading pure transcript: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def get_diarized_transcript(self, video_name):
+        try:
+            transcript_path = os.path.join("diarization_transcript.txt")
+            if os.path.exists(transcript_path):
+                with open(transcript_path, 'r', encoding='utf-8') as f:
+                    # Parse the diarization transcript into segments
+                    segments = []
+                    current_segment = None
+                    
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            if ' - ' in line and ': Speaker' in line:
+                                # New time segment
+                                if current_segment:
+                                    segments.append(current_segment)
+                                
+                                # Parse the timestamp line
+                                parts = line.split(': Speaker ')
+                                time_range = parts[0]
+                                speaker = parts[1]
+                                
+                                current_segment = {
+                                    "start": time_range.split(' - ')[0],
+                                    "end": time_range.split(' - ')[1],
+                                    "speaker": speaker,
+                                    "text": ""
+                                }
+                            elif line.startswith('Transcription:'):
+                                if current_segment:
+                                    current_segment["text"] = line.split(':', 1)[1].strip()
+                
+                    if current_segment:
+                        segments.append(current_segment)
+                
+                    return {"success": True, "segments": segments}
+            else:
+                return {"success": False, "error": "Diarized transcript file not found"}
+        except Exception as e:
+            logging.error(f"Error reading diarized transcript: {e}")
+            return {"success": False, "error": str(e)}
 
 def main():
     # Create a webview window
