@@ -2,8 +2,8 @@ function addVideo() {
     // This function is now handled by the modal
 }
 
-function viewEditVideo(videoPath) {
-    window.location.href = `video-viewer.html?video=${encodeURIComponent(videoPath)}`;
+function viewEditVideo(videoPath, guid) {
+    window.location.href = `video-viewer.html?video=${encodeURIComponent(videoPath)}&guid=${encodeURIComponent(guid)}`;
 }
 
 function arrayBufferToBase64(buffer) {
@@ -71,19 +71,19 @@ function loadVideos() {
 // Load videos on page load
 document.addEventListener('DOMContentLoaded', loadVideos);
 
-function updateCardWithMedia(loadingCard, filename, mediaUrl, isVideo) {
+function updateCardWithMedia(loadingCard, originalFilename, mediaUrl, isVideo, guid) {
     const cardBody = loadingCard.querySelector('.card-body');
     cardBody.innerHTML = `
-        <h5 class="card-title">${filename}</h5>
-        <div class="video-thumbnail mb-3">
+        <h5 class="card-title">${originalFilename}</h5>
+        <div class="video-thumbnail mb-3" data-guid="${guid}">
             <video preload="metadata" muted>
                 <source src="${mediaUrl}" type="video/mp4">
             </video>
             <div class="play-icon">▶</div>
         </div>
         <p>Added on ${new Date().toLocaleString()}</p>
-        <button class="btn btn-primary mt-2 mr-2" onclick="viewEditVideo('${mediaUrl}')">View</button>
-        <button class="btn btn-danger mt-2" onclick="deleteVideo('${filename}')">Delete</button>
+        <button class="btn btn-primary mt-2 mr-2" onclick="viewEditVideo('${mediaUrl}', '${guid}')">View</button>
+        <button class="btn btn-danger mt-2" onclick="deleteVideo('${guid}')">Delete</button>
         <div class="transcription-status status-processing">
             Transcription: Processing
         </div>
@@ -219,9 +219,9 @@ function showMessage(message, type = 'info') {
 }
 
 // Add this function to check transcription status
-async function checkTranscriptionStatus(filename) {
+async function checkTranscriptionStatus(filename, guid) {
     try {
-        const response = await window.pywebview.api.get_transcription_status(filename);
+        const response = await window.pywebview.api.get_transcription_status(guid);
         if (response.success) {
             const card = document.querySelector(`[data-video="${filename}"]`);
             if (card) {
@@ -235,7 +235,7 @@ async function checkTranscriptionStatus(filename) {
                 
                 if (status === 'COMPLETED') {
                     statusText = 'Transcription Complete ✓';
-                    console.log('Transcription completed for:', filename);
+                    console.log('Transcription completed for:', guid);
                     console.log('Transcript:', response.full_transcript);
                     if (card.dataset.statusInterval) {
                         clearInterval(parseInt(card.dataset.statusInterval));
@@ -261,7 +261,14 @@ async function checkTranscriptionStatus(filename) {
     }
 }
 
-// Replace the existing uploadVideo function with this complete version
+// Add this function to handle GUID storage
+function saveVideoGUID(originalFilename, guid) {
+    let videoMappings = JSON.parse(localStorage.getItem('videoMappings')) || {};
+    videoMappings[originalFilename] = guid;
+    localStorage.setItem('videoMappings', JSON.stringify(videoMappings));
+}
+
+// Modify the uploadVideo function to handle GUIDs
 async function uploadVideo(file) {
     const chunkSize = 1024 * 1024; // 1MB chunks
     let offset = 0;
@@ -294,6 +301,8 @@ async function uploadVideo(file) {
     try {
         console.log(`Starting upload of ${file.name} (${formatFileSize(file.size)})`);
         
+        let guid = null;
+        
         while (offset < file.size) {
             currentChunk++;
             const chunk = file.slice(offset, offset + chunkSize);
@@ -309,13 +318,19 @@ async function uploadVideo(file) {
             // Upload chunk
             const response = await window.pywebview.api.upload_video_chunk(
                 base64Chunk, 
-                file.name, 
+                guid ? `${guid}${file.name.substr(file.name.lastIndexOf('.'))}` : file.name,
                 isFirstChunk,
                 file.size
             );
 
             if (!response.success) {
                 throw new Error(response.error || 'Upload failed');
+            }
+
+            // Store GUID from first chunk
+            if (isFirstChunk && response.guid) {
+                guid = response.guid;
+                saveVideoGUID(file.name, guid);
             }
 
             // Calculate progress
@@ -345,7 +360,7 @@ async function uploadVideo(file) {
         
         // Start checking transcription status
         const checkStatus = () => {
-            checkTranscriptionStatus(file.name);
+            checkTranscriptionStatus(file.name, guid);
         };
         const statusInterval = setInterval(checkStatus, 2000);
         const card = loadingCard.querySelector('.card');
@@ -354,7 +369,13 @@ async function uploadVideo(file) {
         }
 
         // Update the card with the completed upload
-        updateCardWithMedia(loadingCard, file.name, `uploaded_videos/${file.name}`, true);
+        updateCardWithMedia(
+            loadingCard, 
+            file.name,
+            `uploaded_videos/${guid}${file.name.substr(file.name.lastIndexOf('.'))}`,
+            true,
+            guid
+        );
         
     } catch (error) {
         console.error('Upload error:', error);

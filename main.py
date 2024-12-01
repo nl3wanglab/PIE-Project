@@ -3,9 +3,10 @@ import webview
 import base64
 import logging
 import json
-from transcript import TranscriptionManager
+from transcript import TranscriptionManager, TranscriptionStatus
 import datetime
 import sys
+import uuid
 
 # Configure logging
 logging.basicConfig(
@@ -48,9 +49,17 @@ class API:
                 logging.warning(f"Invalid file upload attempt: {error_msg}")
                 return {"success": False, "error": error_msg}
 
+            # Generate GUID for new file if this is the first chunk
+            if is_first_chunk:
+                file_guid = str(uuid.uuid4())
+                guid_filename = f"{file_guid}{file_extension}"
+            else:
+                # For subsequent chunks, extract GUID from the filename
+                guid_filename = filename
+
             # Decode the base64 file data
             file_data = base64.b64decode(file_data.split(',')[1])
-            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            file_path = os.path.join(UPLOAD_FOLDER, guid_filename)
             
             # Write the file chunk
             mode = 'wb' if is_first_chunk else 'ab'
@@ -58,36 +67,66 @@ class API:
                 f.write(file_data)
             
             logging.info(f"Chunk written to {file_path}")
-            # Return path relative to static folder
-            return {"success": True, "path": os.path.join('uploaded_videos', filename)}
+            
+            # Store filename mapping if this is the first chunk
+            if is_first_chunk:
+                self._save_filename_mapping(file_guid, filename)
+            
+            # Return path relative to static folder and include GUID
+            return {
+                "success": True, 
+                "path": os.path.join('uploaded_videos', guid_filename),
+                "guid": file_guid if is_first_chunk else None,
+                "original_filename": filename
+            }
         except Exception as e:
             logging.error(f"Error saving video chunk {filename}: {e}")
             return {"success": False, "error": str(e)}
+
+    def _save_filename_mapping(self, guid, original_filename):
+        """Save mapping between GUID and original filename"""
+        mapping_file = os.path.join(UPLOAD_FOLDER, 'filename_mapping.json')
+        try:
+            if os.path.exists(mapping_file):
+                with open(mapping_file, 'r') as f:
+                    mapping = json.load(f)
+            else:
+                mapping = {}
+            
+            mapping[guid] = {
+                'original_filename': original_filename,
+                'timestamp': str(datetime.datetime.now())
+            }
+            
+            with open(mapping_file, 'w') as f:
+                json.dump(mapping, f, indent=2)
+        except Exception as e:
+            logging.error(f"Error saving filename mapping: {e}")
+
+    def get_original_filename(self, guid):
+        """Get original filename from GUID"""
+        mapping_file = os.path.join(UPLOAD_FOLDER, 'filename_mapping.json')
+        try:
+            if os.path.exists(mapping_file):
+                with open(mapping_file, 'r') as f:
+                    mapping = json.load(f)
+                    return mapping.get(guid, {}).get('original_filename')
+        except Exception as e:
+            logging.error(f"Error getting original filename: {e}")
+        return None
 
     def upload_video_chunk(self, file_data, filename, is_first_chunk, total_size):
         try:
             result = self._handle_upload(file_data, filename, is_first_chunk)
             
-            # Calculate total file size and current size to determine if this is the last chunk
-            file_path = os.path.join(UPLOAD_FOLDER, filename)
-            current_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-            
-            if result["success"]:
-                # Check if this is the last chunk (no more data coming)
-                is_last_chunk = current_size >= int(total_size)
+            if result["success"] and is_first_chunk:
+                # Start transcription with GUID
+                video_path = os.path.join(UPLOAD_FOLDER, f"{result['guid']}{os.path.splitext(filename)[1]}")
+                self.transcription_manager.start_transcription(video_path, result['guid'])
+                result["transcriptionStatus"] = "processing"
                 
-                if is_last_chunk:  # Only start transcription after full upload
-                    print(f"\n=== Starting transcription process for {filename} ===")
-                    logging.info(f"Starting transcription for {filename}")
-                    video_path = os.path.join(UPLOAD_FOLDER, filename)  # Define video_path here
-                    self.transcription_manager.start_transcription(video_path)
-                    logging.info(f"Transcription started for {filename}")
-                    print(f"=== Transcription process initiated for {filename} ===\n")
-                    result["transcriptionStatus"] = "processing"
-                    
             return result
         except Exception as e:
-            print(f"\n!!! Error in upload_video_chunk: {e} !!!\n")
             logging.error(f"Error in upload_video_chunk: {e}")
             return {"success": False, "error": str(e)}
 
@@ -238,13 +277,13 @@ class API:
             logging.error(f"Error viewing transcript: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
 
-    def get_transcript(self, video_name):
-        """Get transcript for a video"""
+    def get_transcript(self, guid):
+        """Get transcript for a video using GUID"""
         try:
-            print(f"\n=== Getting Transcript for {video_name} ===")
+            print(f"\n=== Getting Transcript for GUID: {guid} ===")
             
             # Look for transcript in the uploaded_videos/transcripts directory
-            transcript_path = os.path.join(UPLOAD_FOLDER, "transcripts", f"{video_name}_transcript.json")
+            transcript_path = os.path.join(UPLOAD_FOLDER, "transcripts", f"{guid}_transcript.json")
             print(f"Looking for transcript at: {transcript_path}")
             
             if os.path.exists(transcript_path):
@@ -255,13 +294,13 @@ class API:
             
             # If not found in file, check transcription manager
             print("Checking transcription manager...")
-            status = self.transcription_manager.get_transcription_status(video_name)
+            status = self.transcription_manager.get_transcription_status(guid)
             if status:
                 if status.status == TranscriptionStatus.COMPLETED and status.full_transcript:
                     return {
                         "success": True,
                         "data": {
-                            "video_name": video_name,
+                            "video_name": guid,
                             "full_transcript": status.full_transcript,
                             "timestamp": str(datetime.datetime.now()),
                             "status": status.status.value
@@ -272,7 +311,7 @@ class API:
                 elif status.status == TranscriptionStatus.FAILED:
                     return {"success": False, "error": f"Transcription failed: {status.error}"}
             
-            print(f"No transcript found for {video_name}")
+            print(f"No transcript found for GUID: {guid}")
             return {"success": False, "error": "Transcript not found"}
             
         except Exception as e:

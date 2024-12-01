@@ -77,47 +77,41 @@ class TranscriptionManager:
             use_auth_token=self.auth_token,
         )
 
-    def start_transcription(self, video_path: str) -> str:
+    def start_transcription(self, video_path: str, guid: str) -> None:
         """Start the transcription process for a video file"""
         try:
-            video_name = os.path.basename(video_path)
-            logging.info(f"Initializing transcription for {video_name}")
+            logging.info(f"Initializing transcription for GUID: {guid}")
             
             # Create initial transcription result
-            self.transcriptions[video_name] = TranscriptionResult(
-                video_name=video_name,
+            self.transcriptions[guid] = TranscriptionResult(
+                video_name=guid,
                 status=TranscriptionStatus.PENDING
             )
 
             # Start transcription in a separate thread
             thread = threading.Thread(
                 target=self._process_transcription,
-                args=(video_path,),
-                name=f"transcription-{video_name}"
+                args=(video_path, guid),
+                name=f"transcription-{guid}"
             )
-            thread.daemon = True  # Make thread daemon so it doesn't block program exit
+            thread.daemon = True
             thread.start()
             
-            logging.info(f"Transcription thread started for {video_name}")
-            return video_name
+            logging.info(f"Transcription thread started for GUID: {guid}")
+            
         except Exception as e:
             logging.error(f"Error starting transcription: {e}")
             raise
 
-    def _process_transcription(self, video_path: str):
+    def _process_transcription(self, video_path: str, guid: str):
         """Process the transcription in a background thread"""
-        video_name = os.path.basename(video_path)
-        print(f"\nStarting transcription for {video_name}")
+        print(f"\nStarting transcription for GUID: {guid}")
         
         try:
-            self.transcriptions[video_name].status = TranscriptionStatus.PROCESSING
+            self.transcriptions[guid].status = TranscriptionStatus.PROCESSING
             
             # Convert video to audio if needed
-            try:
-                print("Converting video to audio...")
-                audio_path = self._ensure_audio_file(video_path)
-            except Exception as e:
-                raise Exception(f"Failed to convert video to audio: {str(e)}")
+            audio_path = self._ensure_audio_file(video_path, guid)
             
             try:
                 print("Loading audio file...")
@@ -157,10 +151,10 @@ class TranscriptionManager:
             transcript_dir = os.path.join(os.path.dirname(video_path), 'transcripts')
             os.makedirs(transcript_dir, exist_ok=True)
             
-            transcript_path = os.path.join(transcript_dir, f"{video_name}_transcript.json")
+            transcript_path = os.path.join(transcript_dir, f"{guid}_transcript.json")
             
             transcript_data = {
-                'video_name': video_name,
+                'guid': guid,
                 'full_transcript': full_transcription,
                 'timestamp': str(datetime.datetime.now()),
                 'status': TranscriptionStatus.COMPLETED.value
@@ -171,28 +165,28 @@ class TranscriptionManager:
                 json.dump(transcript_data, f, ensure_ascii=False, indent=2)
 
             # Update transcription result
-            self.transcriptions[video_name].status = TranscriptionStatus.COMPLETED
-            self.transcriptions[video_name].full_transcript = full_transcription
-            print(f"\nTranscription completed and saved for {video_name}")
+            self.transcriptions[guid].status = TranscriptionStatus.COMPLETED
+            self.transcriptions[guid].full_transcript = full_transcription
+            print(f"\nTranscription completed and saved for GUID: {guid}")
 
         except Exception as e:
-            error_msg = f"Transcription failed for {video_name}: {str(e)}"
+            error_msg = f"Transcription failed for GUID {guid}: {str(e)}"
             print(f"\nError: {error_msg}")
             logging.error(error_msg)
-            self.transcriptions[video_name].status = TranscriptionStatus.FAILED
-            self.transcriptions[video_name].error = str(e)
+            self.transcriptions[guid].status = TranscriptionStatus.FAILED
+            self.transcriptions[guid].error = str(e)
 
-    def _ensure_audio_file(self, video_path: str) -> str:
+    def _ensure_audio_file(self, video_path: str, guid: str) -> str:
         """Convert video to audio if needed"""
         try:
             import moviepy.editor as mp
             
-            # Generate output path
-            audio_path = os.path.splitext(video_path)[0] + '.wav'
+            # Generate output path using GUID
+            audio_path = os.path.join(os.path.dirname(video_path), f"{guid}.wav")
             
             # Convert only if audio file doesn't exist
             if not os.path.exists(audio_path):
-                logging.info(f"Converting video to audio: {video_path}")
+                logging.info(f"Converting video to audio for GUID: {guid}")
                 video = mp.VideoFileClip(video_path)
                 video.audio.write_audiofile(audio_path)
                 video.close()
@@ -211,59 +205,39 @@ class TranscriptionManager:
         end_idx = int((end_time / total_duration) * text_length)
         return full_text[start_idx:end_idx].strip()
 
-    def get_transcription_status(self, video_name: str) -> TranscriptionResult:
+    def get_transcription_status(self, guid: str) -> Optional[TranscriptionResult]:
         """Get the current status of a transcription"""
-        return self.transcriptions.get(video_name) 
+        return self.transcriptions.get(guid)
 
-    def get_transcript(self, video_name: str) -> Optional[dict]:
+    def get_transcript(self, guid: str) -> Optional[dict]:
         """Get the transcript data for a video if it exists"""
         try:
-            print("\n=== Transcript Lookup Details ===")  # Direct console output
-            print(f"Looking for transcript: {video_name}")
+            print(f"\n=== Getting Transcript for GUID: {guid} ===")
             
-            # Get absolute paths for debugging
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            transcript_dir = os.path.join(current_dir, "static", "uploaded_videos", "transcripts")
-            transcript_path = os.path.join(transcript_dir, f"{video_name}_transcript.json")
+            # Look for transcript in transcripts directory
+            transcript_dir = os.path.join(UPLOAD_FOLDER, "transcripts")
+            transcript_path = os.path.join(transcript_dir, f"{guid}_transcript.json")
             
-            print(f"Current directory: {current_dir}")
-            print(f"Transcript directory: {transcript_dir}")
-            print(f"Full transcript path: {transcript_path}")
+            if os.path.exists(transcript_path):
+                print(f"Found transcript file at {transcript_path}")
+                with open(transcript_path, 'r', encoding='utf-8') as f:
+                    transcript_data = json.load(f)
+                return transcript_data
             
-            logging.info(f"=== Transcript Lookup Details ===")
-            logging.info(f"Looking for transcript: {video_name}")
-            logging.info(f"Current directory: {current_dir}")
-            logging.info(f"Transcript directory: {transcript_dir}")
-            logging.info(f"Full transcript path: {transcript_path}")
+            # If not found in file, check memory
+            if guid in self.transcriptions:
+                result = self.transcriptions[guid]
+                if result.status == TranscriptionStatus.COMPLETED:
+                    return {
+                        'guid': guid,
+                        'full_transcript': result.full_transcript,
+                        'timestamp': str(datetime.datetime.now()),
+                        'status': result.status.value
+                    }
             
-            # Check if directories exist
-            if not os.path.exists(os.path.join(current_dir, "static")):
-                logging.error("'static' directory not found!")
-            if not os.path.exists(os.path.join(current_dir, "static", "uploaded_videos")):
-                logging.error("'uploaded_videos' directory not found!")
-            if not os.path.exists(transcript_dir):
-                logging.error("'transcripts' directory not found!")
-            
-            if not os.path.exists(transcript_path):
-                logging.warning(f"No transcript file found at {transcript_path}")
-                # List available transcripts
-                if os.path.exists(transcript_dir):
-                    available_transcripts = os.listdir(transcript_dir)
-                    logging.info(f"Available transcripts: {available_transcripts}")
-                return None
-
-            logging.info(f"Found transcript file at {transcript_path}")
-            with open(transcript_path, 'r', encoding='utf-8') as f:
-                transcript_data = json.load(f)
-                
-            logging.info("Successfully loaded transcript data")
-            return {
-                'video_name': transcript_data['video_name'],
-                'full_transcript': transcript_data['full_transcript'],
-                'timestamp': transcript_data['timestamp'],
-                'status': transcript_data['status']
-            }
+            print(f"No transcript found for GUID: {guid}")
+            return None
 
         except Exception as e:
-            logging.error(f"Error reading transcript for {video_name}: {str(e)}", exc_info=True)
+            logging.error(f"Error reading transcript for GUID {guid}: {str(e)}", exc_info=True)
             return None

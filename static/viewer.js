@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', function() {
-    // Get video path from URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     const videoPath = urlParams.get('video');
+    const guid = urlParams.get('guid');
     
     // Set up video player
     const videoPlayer = document.getElementById('videoPlayer');
@@ -52,11 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function loadFullTranscript() {
         transcriptContent.innerHTML = '<div class="alert alert-info">Loading transcript...</div>';
         if (window.pywebview && window.pywebview.api) {
-            // Get video name from the path
-            const videoName = videoPath.split('/').pop();  // Gets the filename from the path
-            console.log("Loading transcript for video:", videoName);
-            
-            window.pywebview.api.get_transcript(videoName).then(response => {
+            window.pywebview.api.get_transcript(guid).then(response => {
                 if (response.success && response.data) {
                     console.log("Transcript loaded:", response.data);
                     transcriptContent.innerHTML = `
@@ -72,12 +68,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             Error loading transcript: ${response.error || 'Transcript not found'}
                         </div>`;
                 }
-            }).catch(error => {
-                console.error("Error loading transcript:", error);
-                transcriptContent.innerHTML = `
-                    <div class="alert alert-danger">
-                        Error loading transcript: ${error}
-                    </div>`;
             });
         }
     }
