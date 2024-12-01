@@ -15,18 +15,27 @@ document.addEventListener('DOMContentLoaded', function() {
     const transcriptContent = document.getElementById('transcriptContent');
 
     diarizedBtn.addEventListener('click', function() {
-        diarizedBtn.classList.add('active');
-        fullBtn.classList.remove('active');
-        loadDiarizedTranscript();
+        switchTranscriptView('diarized');
     });
 
     fullBtn.addEventListener('click', function() {
-        fullBtn.classList.add('active');
-        diarizedBtn.classList.remove('active');
-        loadFullTranscript();
+        switchTranscriptView('full');
     });
 
+    function switchTranscriptView(type) {
+        if (type === 'diarized') {
+            diarizedBtn.classList.add('active');
+            fullBtn.classList.remove('active');
+            loadDiarizedTranscript();
+        } else {
+            fullBtn.classList.add('active');
+            diarizedBtn.classList.remove('active');
+            loadFullTranscript();
+        }
+    }
+
     function loadDiarizedTranscript() {
+        transcriptContent.innerHTML = '<div class="alert alert-info">Loading transcript...</div>';
         if (window.pywebview && window.pywebview.api) {
             window.pywebview.api.get_diarized_transcript(videoPath).then(response => {
                 if (response.success) {
@@ -34,11 +43,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else {
                     transcriptContent.innerHTML = `<div class="alert alert-danger">Error loading transcript: ${response.error}</div>`;
                 }
+            }).catch(error => {
+                transcriptContent.innerHTML = `<div class="alert alert-danger">Error loading transcript: ${error}</div>`;
             });
         }
     }
 
     function loadFullTranscript() {
+        transcriptContent.innerHTML = '<div class="alert alert-info">Loading transcript...</div>';
         if (window.pywebview && window.pywebview.api) {
             window.pywebview.api.get_pure_transcript(videoPath).then(response => {
                 if (response.success) {
@@ -46,6 +58,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else {
                     transcriptContent.innerHTML = `<div class="alert alert-danger">Error loading transcript: ${response.error}</div>`;
                 }
+            }).catch(error => {
+                transcriptContent.innerHTML = `<div class="alert alert-danger">Error loading transcript: ${error}</div>`;
             });
         }
     }
@@ -78,6 +92,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return 0;
     }
 
-    // Load diarized transcript by default
-    loadDiarizedTranscript();
+    // Wait for pywebview to be ready
+    function initializeTranscript() {
+        if (window.pywebview && window.pywebview.api) {
+            switchTranscriptView('full');
+        } else {
+            transcriptContent.innerHTML = '<div class="alert alert-info">Initializing...</div>';
+            setTimeout(initializeTranscript, 100);
+        }
+    }
+
+    // Start initialization
+    initializeTranscript();
 }); 
