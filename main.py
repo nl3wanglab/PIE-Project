@@ -22,6 +22,19 @@ class API:
         
     def upload_video_chunk(self, file_data, filename, is_first_chunk):
         try:
+            # Check file extension
+            allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
+            file_extension = os.path.splitext(filename)[1].lower()
+            
+            if file_extension not in allowed_extensions:
+                error_msg = (
+                    f"File '{filename}' is not supported.\n"
+                    f"Only video files are allowed.\n"
+                    f"Supported formats: {', '.join(allowed_extensions)}"
+                )
+                logging.warning(f"Invalid file upload attempt: {error_msg}")
+                return {"success": False, "error": error_msg}
+
             # Decode the base64 file data
             file_data = base64.b64decode(file_data.split(',')[1])
             file_path = os.path.join(UPLOAD_FOLDER, filename)
@@ -94,6 +107,20 @@ class API:
                 return {"success": False, "error": "Diarized transcript file not found"}
         except Exception as e:
             logging.error(f"Error reading diarized transcript: {e}")
+            return {"success": False, "error": str(e)}
+
+    def delete_video(self, filename):
+        try:
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logging.info(f"Successfully deleted video: {filename}")
+                return {"success": True}
+            else:
+                logging.warning(f"File not found for deletion: {filename}")
+                return {"success": False, "error": "File not found"}
+        except Exception as e:
+            logging.error(f"Error deleting video {filename}: {e}")
             return {"success": False, "error": str(e)}
 
 def main():

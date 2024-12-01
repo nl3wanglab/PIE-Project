@@ -5,3 +5,5 @@ token.json
 diarization_cache.json
 diarization_transcript.txt
 full_transcription.txt
+debug.log
+static/uploaded_videos

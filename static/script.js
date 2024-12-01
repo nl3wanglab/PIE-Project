@@ -25,7 +25,7 @@ document.getElementById('videoSettingsForm').addEventListener('submit', function
     // Get form data
     const videoFile = document.getElementById('videoFile').files[0];
     if (!videoFile) {
-        console.error('No video file selected.');
+        showMessage('No video file selected.', 'error');
         return;
     }
 
@@ -42,7 +42,7 @@ document.getElementById('videoSettingsForm').addEventListener('submit', function
                 <div class="progress">
                     <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
                 </div>
-                <p class="mt-3">Processing video...</p>
+                <p class="mt-3">Uploading video...</p>
             </div>
         </div>
     `;
@@ -72,21 +72,21 @@ document.getElementById('videoSettingsForm').addEventListener('submit', function
                             updateCardWithMedia(loadingCard, videoFile.name, response.path, true);
                         }
                     } else {
-                        console.error('Failed to save video.');
-                        loadingCard.querySelector('.card-title').textContent = 'Error';
-                        loadingCard.querySelector('.progress').remove();
-                        loadingCard.querySelector('p').textContent = 'Failed to process video.';
+                        console.error('Failed to save video:', response.error);
+                        loadingCard.remove(); // Remove the loading card
+                        showMessage(response.error, 'error'); // Show error message in UI
                     }
                 }).catch(error => {
                     console.error('Error:', error);
-                    loadingCard.querySelector('.card-title').textContent = 'Error';
-                    loadingCard.querySelector('.progress').remove();
-                    loadingCard.querySelector('p').textContent = 'Failed to process video.';
+                    loadingCard.remove(); // Remove the loading card
+                    showMessage('Failed to process video: ' + error, 'error');
                 });
             };
 
             fileReader.onerror = function() {
                 console.error('Error reading video file.');
+                loadingCard.remove(); // Remove the loading card
+                showMessage('Error reading video file.', 'error');
             };
 
             fileReader.readAsArrayBuffer(slice);
@@ -95,6 +95,8 @@ document.getElementById('videoSettingsForm').addEventListener('submit', function
         readNextChunk();
     } else {
         console.error('PyWebView API is not available.');
+        loadingCard.remove(); // Remove the loading card
+        showMessage('System error: PyWebView API is not available.', 'error');
     }
 });
 
@@ -229,4 +231,75 @@ function handleFileUpload(fileData, filename) {
         loadingCard.querySelector('.progress').remove();
         loadingCard.querySelector('p').textContent = 'Unsupported file type.';
     }
+}
+
+function deleteVideo(filename) {
+    if (confirm(`Are you sure you want to delete ${filename}?`)) {
+        window.pywebview.api.delete_video(filename)
+            .then(response => {
+                if (response.success) {
+                    // Remove the video element and its container if it exists
+                    const videoContainer = document.getElementById(`video-container-${filename}`);
+                    if (videoContainer) {
+                        videoContainer.remove();
+                    }
+                    showMessage('Video deleted successfully', 'success');
+                } else {
+                    showMessage(`Error deleting video: ${response.error}`, 'error');
+                }
+            })
+            .catch(error => {
+                showMessage(`Error deleting video: ${error}`, 'error');
+            });
+    }
+}
+
+// Modify your existing uploadChunk function to add a delete button after successful upload
+function handleUploadSuccess(response, filename) {
+    const videoContainer = document.createElement('div');
+    videoContainer.id = `video-container-${filename}`;
+    videoContainer.className = 'video-container';
+
+    const video = document.createElement('video');
+    video.controls = true;
+    video.style.maxWidth = '100%';
+    video.src = `static/${response.path}`;
+
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = 'Delete Video';
+    deleteButton.className = 'delete-button';
+    deleteButton.onclick = () => deleteVideo(filename);
+
+    videoContainer.appendChild(video);
+    videoContainer.appendChild(deleteButton);
+    document.getElementById('videoPreview').appendChild(videoContainer);
+}
+
+// Add this function to handle message display
+function showMessage(message, type = 'info') {
+    // Create message container if it doesn't exist
+    let messageContainer = document.getElementById('message-container');
+    if (!messageContainer) {
+        messageContainer = document.createElement('div');
+        messageContainer.id = 'message-container';
+        messageContainer.style.position = 'fixed';
+        messageContainer.style.top = '20px';
+        messageContainer.style.right = '20px';
+        messageContainer.style.zIndex = '9999';
+        document.body.appendChild(messageContainer);
+    }
+
+    // Create message element
+    const messageElement = document.createElement('div');
+    messageElement.className = `alert alert-${type}`;
+    messageElement.role = 'alert';
+    messageElement.textContent = message;
+
+    // Add to container
+    messageContainer.appendChild(messageElement);
+
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        messageElement.remove();
+    }, 5000);
 }
