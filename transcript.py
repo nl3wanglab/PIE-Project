@@ -67,7 +67,10 @@ class TranscriptionManager:
             "automatic-speech-recognition",
             model=model,
             tokenizer=tokenizer,
-            feature_extractor=feature_extractor
+            feature_extractor=feature_extractor,
+            chunk_length_s=30,
+            return_timestamps=True,
+            framework="pt"
         )
 
         # Initialize Diarization pipeline
@@ -131,7 +134,7 @@ class TranscriptionManager:
             num_chunks = int(np.ceil(audio.shape[1] / (chunk_duration * sample_rate)))
             
             print(f"Processing {num_chunks} chunks...")
-            full_transcription = ""
+            transcribed_segments = []
             
             for i in range(num_chunks):
                 progress = (i + 1) / num_chunks * 100
@@ -141,13 +144,67 @@ class TranscriptionManager:
                 end_sample = min((i + 1) * chunk_duration * sample_rate, audio.shape[1])
                 audio_chunk = audio[:, start_sample:end_sample].squeeze().numpy()
                 
-                transcription = self.transcription_pipeline(
-                    audio_chunk, 
-                    return_timestamps=True
-                )['text']
-                full_transcription += transcription
+                # Get transcription with timestamps
+                try:
+                    result = self.transcription_pipeline(
+                        audio_chunk,
+                        return_timestamps=True,
+                        generate_kwargs={"language": "en"}
+                    )
+                    
+                    # Handle chunks and timestamps safely
+                    chunk_start_time = start_sample / sample_rate
+                    
+                    # Ensure we have chunks in the result
+                    if 'chunks' in result:
+                        for chunk in result['chunks']:
+                            # Validate timestamp format
+                            if isinstance(chunk.get('timestamp'), (list, tuple)) and len(chunk['timestamp']) == 2:
+                                start_time, end_time = chunk['timestamp']
+                                
+                                # Handle None or invalid timestamps
+                                if start_time is not None and end_time is not None:
+                                    segment = {
+                                        'text': chunk['text'],
+                                        'timestamp': [
+                                            chunk_start_time + float(start_time),
+                                            chunk_start_time + float(end_time)
+                                        ]
+                                    }
+                                    transcribed_segments.append(segment)
+                                else:
+                                    # If timestamps are invalid, estimate them based on chunk position
+                                    segment = {
+                                        'text': chunk['text'],
+                                        'timestamp': [
+                                            chunk_start_time,
+                                            chunk_start_time + (end_sample - start_sample) / sample_rate
+                                        ]
+                                    }
+                                    transcribed_segments.append(segment)
+                    else:
+                        # If no chunks with timestamps, create a single segment for this chunk
+                        segment = {
+                            'text': result.get('text', ''),
+                            'timestamp': [
+                                chunk_start_time,
+                                chunk_start_time + (end_sample - start_sample) / sample_rate
+                            ]
+                        }
+                        transcribed_segments.append(segment)
 
-            # After successful transcription, save to file
+                except Exception as chunk_error:
+                    logging.error(f"Error processing chunk {i}: {str(chunk_error)}")
+                    # Continue with next chunk instead of failing completely
+                    continue
+
+            # Create full transcript with timestamps
+            full_transcript = {
+                'text': ' '.join(segment['text'] for segment in transcribed_segments),
+                'segments': transcribed_segments
+            }
+
+            # Save to file
             transcript_dir = os.path.join(os.path.dirname(video_path), 'transcripts')
             os.makedirs(transcript_dir, exist_ok=True)
             
@@ -155,7 +212,8 @@ class TranscriptionManager:
             
             transcript_data = {
                 'guid': guid,
-                'full_transcript': full_transcription,
+                'full_transcript': full_transcript['text'],
+                'segments': full_transcript['segments'],
                 'timestamp': str(datetime.datetime.now()),
                 'status': TranscriptionStatus.COMPLETED.value
             }
@@ -166,7 +224,8 @@ class TranscriptionManager:
 
             # Update transcription result
             self.transcriptions[guid].status = TranscriptionStatus.COMPLETED
-            self.transcriptions[guid].full_transcript = full_transcription
+            self.transcriptions[guid].full_transcript = full_transcript['text']
+            self.transcriptions[guid].segments = full_transcript['segments']
             print(f"\nTranscription completed and saved for GUID: {guid}")
 
         except Exception as e:

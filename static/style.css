@@ -221,4 +221,33 @@ h1 {
     color: #666;
     font-style: italic;
     margin-bottom: 15px;
+}
+
+.transcript-segment {
+    padding: 10px;
+    margin: 5px 0;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.transcript-segment:hover {
+    background-color: #f8f9fa;
+}
+
+.segment-timestamp {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 5px;
+}
+
+.segment-text {
+    font-size: 1.1em;
+    line-height: 1.4;
+}
+
+.current-segment {
+    background-color: #e3f2fd;
+    border-color: #90caf9;
 } 

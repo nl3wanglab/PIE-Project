@@ -49,20 +49,31 @@ class API:
                 logging.warning(f"Invalid file upload attempt: {error_msg}")
                 return {"success": False, "error": error_msg}
 
-            # Generate GUID for new file if this is the first chunk
+            # Generate or retrieve GUID
             if is_first_chunk:
                 file_guid = str(uuid.uuid4())
-                guid_filename = f"{file_guid}{file_extension}"
             else:
                 # For subsequent chunks, extract GUID from the filename
-                guid_filename = filename
+                file_guid = os.path.splitext(filename)[0]  # Assuming filename is the GUID for subsequent chunks
+                
+            if not file_guid:
+                return {"success": False, "error": "Invalid file identifier"}
 
-            # Decode the base64 file data
-            file_data = base64.b64decode(file_data.split(',')[1])
+            # Create the full path with GUID
+            guid_filename = f"{file_guid}{file_extension}"
             file_path = os.path.join(UPLOAD_FOLDER, guid_filename)
             
+            # Decode the base64 file data
+            try:
+                file_data = base64.b64decode(file_data.split(',')[1])
+            except Exception as e:
+                logging.error(f"Error decoding base64 data: {e}")
+                return {"success": False, "error": "Invalid file data"}
+
             # Write the file chunk
             mode = 'wb' if is_first_chunk else 'ab'
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
             with open(file_path, mode) as f:
                 f.write(file_data)
             
@@ -72,11 +83,10 @@ class API:
             if is_first_chunk:
                 self._save_filename_mapping(file_guid, filename)
             
-            # Return path relative to static folder and include GUID
             return {
                 "success": True, 
                 "path": os.path.join('uploaded_videos', guid_filename),
-                "guid": file_guid if is_first_chunk else None,
+                "guid": file_guid,
                 "original_filename": filename
             }
         except Exception as e:
@@ -116,14 +126,35 @@ class API:
         return None
 
     def upload_video_chunk(self, file_data, filename, is_first_chunk, total_size):
+        """Handle video chunk upload and start transcription when complete"""
         try:
+            logging.info(f"Processing chunk upload: {filename} (first_chunk: {is_first_chunk}, total_size: {total_size})")
+            
             result = self._handle_upload(file_data, filename, is_first_chunk)
             
-            if result["success"] and is_first_chunk:
-                # Start transcription with GUID
-                video_path = os.path.join(UPLOAD_FOLDER, f"{result['guid']}{os.path.splitext(filename)[1]}")
-                self.transcription_manager.start_transcription(video_path, result['guid'])
-                result["transcriptionStatus"] = "processing"
+            if result["success"]:
+                file_guid = result["guid"]
+                file_extension = os.path.splitext(filename)[1]
+                file_path = os.path.join(UPLOAD_FOLDER, f"{file_guid}{file_extension}")
+                
+                try:
+                    current_size = os.path.getsize(file_path)
+                    upload_progress = (current_size / total_size) * 100
+                    result["uploadProgress"] = upload_progress
+                    
+                    logging.info(f"Upload progress for {file_guid}: {upload_progress:.1f}%")
+                    
+                    # Check if upload is complete
+                    if current_size >= total_size:
+                        logging.info(f"Upload complete for {file_guid}, starting transcription")
+                        self.transcription_manager.start_transcription(file_path, file_guid)
+                        result["transcriptionStatus"] = "processing"
+                    else:
+                        logging.info(f"Waiting for more chunks... ({current_size}/{total_size} bytes)")
+                        result["transcriptionStatus"] = "uploading"
+                except Exception as e:
+                    logging.error(f"Error checking file size: {e}")
+                    return {"success": False, "error": str(e)}
                 
             return result
         except Exception as e:
@@ -318,6 +349,28 @@ class API:
             print(f"Error getting transcript: {str(e)}")
             logging.error(f"Error getting transcript: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
+
+    def _validate_upload_completion(self, file_path, total_size):
+        """Validate that the upload is complete and file is valid"""
+        try:
+            if not os.path.exists(file_path):
+                return False, "File does not exist"
+            
+            current_size = os.path.getsize(file_path)
+            if current_size < total_size:
+                return False, f"Incomplete upload ({current_size}/{total_size} bytes)"
+            
+            # Basic file integrity check
+            try:
+                with open(file_path, 'rb') as f:
+                    # Read first few bytes to verify file is accessible
+                    f.read(1024)
+                return True, None
+            except Exception as e:
+                return False, f"File integrity check failed: {str(e)}"
+            
+        except Exception as e:
+            return False, f"Validation error: {str(e)}"
 
 def main():
     # Create a webview window

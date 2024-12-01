@@ -55,12 +55,7 @@ document.addEventListener('DOMContentLoaded', function() {
             window.pywebview.api.get_transcript(guid).then(response => {
                 if (response.success && response.data) {
                     console.log("Transcript loaded:", response.data);
-                    transcriptContent.innerHTML = `
-                        <div class="transcript-container">
-                            <h3>Transcript</h3>
-                            <p class="timestamp">Created: ${response.data.timestamp}</p>
-                            <div class="transcript-text">${response.data.full_transcript}</div>
-                        </div>`;
+                    displayFullTranscript(response.data);
                 } else {
                     console.error("Failed to load transcript:", response.error);
                     transcriptContent.innerHTML = `
@@ -112,4 +107,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Start initialization
     initializeTranscript();
+
+    function displayFullTranscript(transcriptData) {
+        const container = document.createElement('div');
+        container.className = 'transcript-container';
+
+        // Create segments with timestamps
+        transcriptData.segments.forEach(segment => {
+            const segmentDiv = document.createElement('div');
+            segmentDiv.className = 'transcript-segment';
+            
+            const startTime = segment.timestamp[0];
+            const endTime = segment.timestamp[1];
+            
+            segmentDiv.innerHTML = `
+                <div class="segment-timestamp" data-start="${startTime}">
+                    ${formatTimestamp(startTime)} - ${formatTimestamp(endTime)}
+                </div>
+                <div class="segment-text">${segment.text}</div>
+            `;
+
+            // Add click handler to jump to timestamp
+            segmentDiv.addEventListener('click', () => {
+                const videoPlayer = document.getElementById('videoPlayer');
+                videoPlayer.currentTime = startTime;
+                videoPlayer.play();
+            });
+
+            container.appendChild(segmentDiv);
+        });
+
+        transcriptContent.innerHTML = '';
+        transcriptContent.appendChild(container);
+    }
+
+    function formatTimestamp(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
 }); 
