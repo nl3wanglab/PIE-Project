@@ -30,74 +30,7 @@ document.getElementById('videoSettingsForm').addEventListener('submit', function
     }
 
     console.log(`Uploading video: ${videoFile.name}`);
-
-    // Create a loading card
-    const videoCards = document.getElementById('video-cards');
-    const loadingCard = document.createElement('div');
-    loadingCard.className = 'col-md-4 mb-4';
-    loadingCard.innerHTML = `
-        <div class="card">
-            <div class="card-body text-center">
-                <h5 class="card-title">Loading...</h5>
-                <div class="progress">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
-                </div>
-                <p class="mt-3">Uploading video...</p>
-            </div>
-        </div>
-    `;
-    videoCards.insertBefore(loadingCard, videoCards.lastElementChild);
-
-    // Check if PyWebView API is available
-    if (window.pywebview && window.pywebview.api) {
-        const chunkSize = 1024 * 1024; // 1MB
-        let offset = 0;
-
-        function readNextChunk() {
-            const fileReader = new FileReader();
-            const slice = videoFile.slice(offset, offset + chunkSize);
-
-            fileReader.onload = function() {
-                const arrayBuffer = fileReader.result;
-                const base64String = arrayBufferToBase64(arrayBuffer);
-                const fileData = `data:video/mp4;base64,${base64String}`;
-
-                window.pywebview.api.upload_video_chunk(fileData, videoFile.name, offset === 0).then(response => {
-                    if (response.success) {
-                        if (offset + chunkSize < videoFile.size) {
-                            offset += chunkSize;
-                            readNextChunk();
-                        } else {
-                            console.log(`Video saved at: ${response.path}`);
-                            updateCardWithMedia(loadingCard, videoFile.name, response.path, true);
-                        }
-                    } else {
-                        console.error('Failed to save video:', response.error);
-                        loadingCard.remove(); // Remove the loading card
-                        showMessage(response.error, 'error'); // Show error message in UI
-                    }
-                }).catch(error => {
-                    console.error('Error:', error);
-                    loadingCard.remove(); // Remove the loading card
-                    showMessage('Failed to process video: ' + error, 'error');
-                });
-            };
-
-            fileReader.onerror = function() {
-                console.error('Error reading video file.');
-                loadingCard.remove(); // Remove the loading card
-                showMessage('Error reading video file.', 'error');
-            };
-
-            fileReader.readAsArrayBuffer(slice);
-        }
-
-        readNextChunk();
-    } else {
-        console.error('PyWebView API is not available.');
-        loadingCard.remove(); // Remove the loading card
-        showMessage('System error: PyWebView API is not available.', 'error');
-    }
+    uploadVideo(videoFile);
 });
 
 function saveVideoInfo(videoInfo) {
@@ -139,65 +72,46 @@ function loadVideos() {
 document.addEventListener('DOMContentLoaded', loadVideos);
 
 function updateCardWithMedia(loadingCard, filename, mediaUrl, isVideo) {
-    loadingCard.querySelector('.card-title').textContent = filename;
-    loadingCard.querySelector('.progress').remove();
+    const cardBody = loadingCard.querySelector('.card-body');
+    cardBody.innerHTML = `
+        <h5 class="card-title">${filename}</h5>
+        <div class="video-thumbnail mb-3">
+            <video preload="metadata" muted>
+                <source src="${mediaUrl}" type="video/mp4">
+            </video>
+            <div class="play-icon">▶</div>
+        </div>
+        <p>Added on ${new Date().toLocaleString()}</p>
+        <button class="btn btn-primary mt-2 mr-2" onclick="viewEditVideo('${mediaUrl}')">View</button>
+        <button class="btn btn-danger mt-2" onclick="deleteVideo('${filename}')">Delete</button>
+        <div class="transcription-status status-processing">
+            Transcription: Processing
+        </div>
+    `;
+
+    // Set up video thumbnail behavior
+    const videoElement = cardBody.querySelector('video');
+    const thumbnailContainer = cardBody.querySelector('.video-thumbnail');
     
-    if (isVideo) {
-        // Create a video thumbnail container
-        const thumbnailHtml = `
-            <div class="video-thumbnail mb-3">
-                <video preload="metadata" muted>
-                    <source src="${mediaUrl}" type="video/mp4">
-                </video>
-                <div class="play-icon">▶</div>
-            </div>
-            <p>Added on ${new Date().toLocaleString()}</p>
-            <button class="btn btn-danger mt-2" onclick="deleteVideoCard(this)">Delete</button>
-        `;
-        
-        loadingCard.querySelector('.card-body').innerHTML = `
-            <h5 class="card-title">${filename}</h5>
-            ${thumbnailHtml}
-        `;
+    videoElement.addEventListener('loadedmetadata', function() {
+        const seekTime = Math.min(1, this.duration * 0.25);
+        this.currentTime = seekTime;
+    });
 
-        // Set up the video thumbnail
-        const videoElement = loadingCard.querySelector('video');
-        const thumbnailContainer = loadingCard.querySelector('.video-thumbnail');
-        
-        videoElement.addEventListener('loadedmetadata', function() {
-            const seekTime = Math.min(1, this.duration * 0.25);
-            this.currentTime = seekTime;
-        });
+    thumbnailContainer.addEventListener('mouseenter', function() {
+        videoElement.play();
+    });
 
-        // Add hover handlers for video playback
-        thumbnailContainer.addEventListener('mouseenter', function() {
-            videoElement.play();
-        });
+    thumbnailContainer.addEventListener('mouseleave', function() {
+        videoElement.pause();
+        const seekTime = Math.min(1, videoElement.duration * 0.25);
+        videoElement.currentTime = seekTime;
+    });
 
-        thumbnailContainer.addEventListener('mouseleave', function() {
-            videoElement.pause();
-            // Reset to thumbnail frame
-            const seekTime = Math.min(1, videoElement.duration * 0.25);
-            videoElement.currentTime = seekTime;
-        });
-
-        // Prevent video from playing when clicking if it's not being hovered
-        thumbnailContainer.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-    }
-
-    const viewButton = document.createElement('button');
-    viewButton.className = 'btn btn-primary mt-2 mr-2';
-    viewButton.textContent = 'View';
-    viewButton.onclick = (e) => {
+    thumbnailContainer.addEventListener('click', function(e) {
+        e.preventDefault();
         e.stopPropagation();
-        viewEditVideo(mediaUrl);
-    };
-    
-    const deleteButton = loadingCard.querySelector('.btn-danger');
-    deleteButton.parentNode.insertBefore(viewButton, deleteButton);
+    });
 }
 
 // Example function to determine if a file is a video
@@ -302,4 +216,258 @@ function showMessage(message, type = 'info') {
     setTimeout(() => {
         messageElement.remove();
     }, 5000);
+}
+
+// Add this function to check transcription status
+async function checkTranscriptionStatus(filename) {
+    try {
+        const response = await window.pywebview.api.get_transcription_status(filename);
+        if (response.success) {
+            const card = document.querySelector(`[data-video="${filename}"]`);
+            if (card) {
+                const statusElement = card.querySelector('.transcription-status');
+                if (!statusElement) {
+                    return;
+                }
+                
+                const status = response.status;
+                let statusText = '';
+                
+                if (status === 'COMPLETED') {
+                    statusText = 'Transcription Complete ✓';
+                    console.log('Transcription completed for:', filename);
+                    console.log('Transcript:', response.full_transcript);
+                    if (card.dataset.statusInterval) {
+                        clearInterval(parseInt(card.dataset.statusInterval));
+                    }
+                } else if (status === 'FAILED') {
+                    statusText = `Transcription Failed: ${response.error || 'Unknown error'}`;
+                    console.error('Transcription failed:', response.error);
+                    if (card.dataset.statusInterval) {
+                        clearInterval(parseInt(card.dataset.statusInterval));
+                    }
+                } else if (status === 'PROCESSING') {
+                    statusText = 'Transcribing... (This may take a few minutes)';
+                } else {
+                    statusText = `Transcription: ${status}`;
+                }
+                
+                statusElement.textContent = statusText;
+                statusElement.className = `transcription-status status-${status.toLowerCase()}`;
+            }
+        }
+    } catch (error) {
+        console.error('Error checking transcription status:', error);
+    }
+}
+
+// Replace the existing uploadVideo function with this complete version
+async function uploadVideo(file) {
+    const chunkSize = 1024 * 1024; // 1MB chunks
+    let offset = 0;
+    let isFirstChunk = true;
+    const totalChunks = Math.ceil(file.size / chunkSize);
+    let currentChunk = 0;
+
+    // Create a loading card
+    const videoCards = document.getElementById('video-cards');
+    const loadingCard = document.createElement('div');
+    loadingCard.className = 'col-md-4 mb-4';
+    loadingCard.innerHTML = `
+        <div class="card" data-video="${file.name}">
+            <div class="card-body text-center">
+                <h5 class="card-title">${file.name}</h5>
+                <div class="progress mb-3" style="height: 20px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%; transition: width 0.1s ease">
+                    </div>
+                </div>
+                <p class="mt-3">Uploading: 0/${formatFileSize(file.size)} (0%)</p>
+                <div class="transcription-status status-pending">
+                    Waiting for upload to complete...
+                </div>
+            </div>
+        </div>
+    `;
+    videoCards.insertBefore(loadingCard, videoCards.lastElementChild);
+
+    try {
+        console.log(`Starting upload of ${file.name} (${formatFileSize(file.size)})`);
+        
+        while (offset < file.size) {
+            currentChunk++;
+            const chunk = file.slice(offset, offset + chunkSize);
+            const reader = new FileReader();
+            
+            // Convert chunk to base64
+            const base64Chunk = await new Promise((resolve, reject) => {
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(chunk);
+            });
+
+            // Upload chunk
+            const response = await window.pywebview.api.upload_video_chunk(
+                base64Chunk, 
+                file.name, 
+                isFirstChunk,
+                file.size
+            );
+
+            if (!response.success) {
+                throw new Error(response.error || 'Upload failed');
+            }
+
+            // Calculate progress
+            const uploadedSize = Math.min(offset + chunkSize, file.size);
+            const progress = (uploadedSize / file.size) * 100;
+            
+            // Update UI with requestAnimationFrame for smoother updates
+            requestAnimationFrame(() => {
+                const progressBar = loadingCard.querySelector('.progress-bar');
+                const progressText = loadingCard.querySelector('p.mt-3');
+                progressBar.style.width = `${progress}%`;
+                progressBar.setAttribute('aria-valuenow', progress);
+                progressText.textContent = `Uploading: ${formatFileSize(uploadedSize)}/${formatFileSize(file.size)} (${Math.round(progress)}%)`;
+            });
+            
+            // Log progress
+            console.log(`Uploaded chunk ${currentChunk}/${totalChunks} (${Math.round(progress)}%)`);
+
+            offset += chunkSize;
+            isFirstChunk = false;
+            
+            // Add a small delay to prevent overwhelming the UI
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+
+        console.log('Upload complete, starting transcription...');
+        
+        // Start checking transcription status
+        const checkStatus = () => {
+            checkTranscriptionStatus(file.name);
+        };
+        const statusInterval = setInterval(checkStatus, 2000);
+        const card = loadingCard.querySelector('.card');
+        if (card) {
+            card.dataset.statusInterval = statusInterval;
+        }
+
+        // Update the card with the completed upload
+        updateCardWithMedia(loadingCard, file.name, `uploaded_videos/${file.name}`, true);
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        showMessage(`Upload failed: ${error.message}`, 'error');
+        loadingCard.remove();
+    }
+}
+
+// Add this helper function for formatting file sizes
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Function to create video card (modify your existing function)
+function createVideoCard(filename, videoPath) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.setAttribute('data-video', filename);
+    
+    // ... existing card creation code ...
+    
+    // Add transcription status element
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'transcription-status status-pending';
+    statusDiv.textContent = 'Transcription: Pending';
+    card.appendChild(statusDiv);
+    
+    return card;
+}
+
+function viewTranscript(videoName) {
+    window.pywebview.api.get_pure_transcript(videoName).then(response => {
+        if (response.success) {
+            // Create or get modal
+            let modal = document.getElementById('transcriptModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'transcriptModal';
+                modal.className = 'modal';
+                document.body.appendChild(modal);
+            }
+
+            // Update modal content
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h2>Transcript for ${videoName}</h2>
+                    <p class="timestamp">Transcribed: ${response.timestamp}</p>
+                    <div class="transcript-text">${response.text}</div>
+                </div>
+            `;
+
+            // Show modal
+            modal.style.display = "block";
+
+            // Close button functionality
+            const closeBtn = modal.querySelector('.close');
+            closeBtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                modal.style.display = "none";
+            }
+
+            // Click outside to close
+            modal.onclick = function(event) {
+                if (event.target === modal) {
+                    modal.style.display = "none";
+                }
+            }
+
+            // Prevent clicks inside modal content from closing the modal
+            modal.querySelector('.modal-content').onclick = function(e) {
+                e.stopPropagation();
+            }
+        } else {
+            alert('Error loading transcript: ' + response.error);
+        }
+    });
+}
+
+// Add this function to handle the settings modal
+function showSettingsModal() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) {
+        modal.style.display = 'block';
+        
+        // Close button functionality
+        const closeBtn = modal.querySelector('.close');
+        if (closeBtn) {
+            closeBtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                modal.style.display = "none";
+            }
+        }
+
+        // Click outside to close
+        window.onclick = function(event) {
+            if (event.target === modal) {
+                modal.style.display = "none";
+            }
+        }
+
+        // Prevent clicks inside modal content from closing the modal
+        const modalContent = modal.querySelector('.modal-content');
+        if (modalContent) {
+            modalContent.onclick = function(e) {
+                e.stopPropagation();
+            }
+        }
+    }
 }

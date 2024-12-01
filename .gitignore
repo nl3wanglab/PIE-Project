@@ -7,3 +7,4 @@ diarization_transcript.txt
 full_transcription.txt
 debug.log
 static/uploaded_videos
+__pycache__/

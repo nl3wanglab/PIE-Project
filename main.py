@@ -2,6 +2,9 @@ import os
 import webview
 import base64
 import logging
+import json
+from transcript import TranscriptionManager
+import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -19,8 +22,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 class API:
     def __init__(self):
         self.upload_folder = os.path.join('static', 'uploaded_videos')
+        self.transcription_manager = TranscriptionManager()
         
-    def upload_video_chunk(self, file_data, filename, is_first_chunk):
+    def _handle_upload(self, file_data, filename, is_first_chunk):
+        """Handle the upload of a video chunk"""
         try:
             # Check file extension
             allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
@@ -51,18 +56,60 @@ class API:
             logging.error(f"Error saving video chunk {filename}: {e}")
             return {"success": False, "error": str(e)}
 
+    def upload_video_chunk(self, file_data, filename, is_first_chunk, total_size):
+        try:
+            result = self._handle_upload(file_data, filename, is_first_chunk)
+            
+            # Calculate total file size and current size to determine if this is the last chunk
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            current_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            
+            if result["success"]:
+                # Check if this is the last chunk (no more data coming)
+                is_last_chunk = current_size >= int(total_size)
+                
+                if is_last_chunk:  # Only start transcription after full upload
+                    print(f"\n=== Starting transcription process for {filename} ===")
+                    logging.info(f"Starting transcription for {filename}")
+                    video_path = os.path.join(UPLOAD_FOLDER, filename)  # Define video_path here
+                    self.transcription_manager.start_transcription(video_path)
+                    logging.info(f"Transcription started for {filename}")
+                    print(f"=== Transcription process initiated for {filename} ===\n")
+                    result["transcriptionStatus"] = "processing"
+                    
+            return result
+        except Exception as e:
+            print(f"\n!!! Error in upload_video_chunk: {e} !!!\n")
+            logging.error(f"Error in upload_video_chunk: {e}")
+            return {"success": False, "error": str(e)}
+
     def test_connection(self):
         logging.info("JavaScript successfully called Python!")
         return "Connection successful"
 
     def get_pure_transcript(self, video_name):
         try:
-            transcript_path = os.path.join("full_transcription.txt")
+            # Look for transcript in the transcripts directory
+            transcript_path = os.path.join(UPLOAD_FOLDER, 'transcripts', f"{video_name}_transcript.json")
+            
             if os.path.exists(transcript_path):
                 with open(transcript_path, 'r', encoding='utf-8') as f:
-                    return {"success": True, "text": f.read()}
+                    transcript_data = json.load(f)
+                    return {
+                        "success": True, 
+                        "text": transcript_data['full_transcript'],
+                        "timestamp": transcript_data['timestamp']
+                    }
             else:
-                return {"success": False, "error": "Transcript file not found"}
+                # Try getting from transcription manager if file not found
+                result = self.transcription_manager.get_transcription_status(video_name)
+                if result and result.full_transcript:
+                    return {
+                        "success": True,
+                        "text": result.full_transcript,
+                        "timestamp": str(datetime.datetime.now())
+                    }
+                return {"success": False, "error": "Transcript not found"}
         except Exception as e:
             logging.error(f"Error reading pure transcript: {e}")
             return {"success": False, "error": str(e)}
@@ -121,6 +168,23 @@ class API:
                 return {"success": False, "error": "File not found"}
         except Exception as e:
             logging.error(f"Error deleting video {filename}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def get_transcription_status(self, video_name):
+        """Get the current status of video transcription"""
+        try:
+            result = self.transcription_manager.get_transcription_status(video_name)
+            if result:
+                return {
+                    "success": True,
+                    "status": result.status.value,
+                    "full_transcript": result.full_transcript,
+                    "diarized_segments": result.diarized_segments,
+                    "error": result.error
+                }
+            return {"success": False, "error": "Transcription not found"}
+        except Exception as e:
+            logging.error(f"Error getting transcription status: {e}")
             return {"success": False, "error": str(e)}
 
 def main():
