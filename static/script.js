@@ -109,32 +109,11 @@ function saveVideoInfo(videoInfo) {
 
 function deleteVideoCard(button) {
     const card = button.closest('.col-md-4');
-    const filename = card.querySelector('.card-title').textContent;
-    
-    if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.delete_video(filename)
-            .then(response => {
-                if (response.success) {
-                    // Remove the card from UI
-                    card.remove();
-                    showMessage('Video deleted successfully', 'success');
-                    
-                    // Remove from localStorage if it exists
-                    let videos = JSON.parse(localStorage.getItem('videos')) || [];
-                    videos = videos.filter(video => video.name !== filename);
-                    localStorage.setItem('videos', JSON.stringify(videos));
-                    
-                    // Remove any related processing data
-                    localStorage.removeItem(`transcript_${filename}`);
-                    localStorage.removeItem(`diarization_${filename}`);
-                } else {
-                    showMessage(`Error deleting video: ${response.error}`, 'error');
-                }
-            })
-            .catch(error => {
-                showMessage(`Error deleting video: ${error}`, 'error');
-            });
-    }
+    card.remove();
+    // Update local storage or server with deletion
+    let videos = JSON.parse(localStorage.getItem('videos')) || [];
+    videos = videos.filter(video => video.name !== card.querySelector('.card-title').textContent);
+    localStorage.setItem('videos', JSON.stringify(videos));
 }
 
 function loadVideos() {
@@ -324,55 +303,3 @@ function showMessage(message, type = 'info') {
         messageElement.remove();
     }, 5000);
 }
-
-// Add this function at the top level
-function createVideoCard(filename) {
-    const card = document.createElement('div');
-    card.className = 'col-md-4 mb-4';
-    card.innerHTML = `
-        <div class="card">
-            <div class="card-body text-center">
-                <h5 class="card-title">${filename}</h5>
-                <div class="progress">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
-                </div>
-                <p class="mt-3">Loading video...</p>
-            </div>
-        </div>
-    `;
-    
-    // Add the card to the video-cards container
-    const videoCards = document.getElementById('video-cards');
-    if (videoCards) {
-        videoCards.insertBefore(card, videoCards.lastElementChild);
-    }
-    
-    return card;
-}
-
-// Modify the loadExistingVideos function
-function loadExistingVideos() {
-    if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.get_uploaded_videos().then(response => {
-            if (response.success) {
-                response.videos.forEach(video => {
-                    // Create and update the card using the existing updateCardWithMedia function
-                    const loadingCard = createVideoCard(video.filename);
-                    updateCardWithMedia(loadingCard, video.filename, video.path, true);
-                });
-            }
-        }).catch(error => {
-            console.error('Error loading existing videos:', error);
-            showMessage('Error loading existing videos: ' + error, 'error');
-        });
-    } else {
-        // If pywebview isn't ready yet, try again in 100ms
-        setTimeout(loadExistingVideos, 100);
-    }
-}
-
-// Make sure the DOMContentLoaded event listener is at the bottom of the file
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize by loading existing videos
-    loadExistingVideos();
-});
