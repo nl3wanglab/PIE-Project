@@ -13,6 +13,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 import datetime
+from pathlib import Path
 
 class TranscriptionStatus(Enum):
     PENDING = "pending"
@@ -165,6 +166,7 @@ class TranscriptionManager:
                 'status': TranscriptionStatus.COMPLETED.value
             }
             
+            print(f"Saving transcript to: {transcript_path}")
             with open(transcript_path, 'w', encoding='utf-8') as f:
                 json.dump(transcript_data, f, ensure_ascii=False, indent=2)
 
@@ -212,3 +214,56 @@ class TranscriptionManager:
     def get_transcription_status(self, video_name: str) -> TranscriptionResult:
         """Get the current status of a transcription"""
         return self.transcriptions.get(video_name) 
+
+    def get_transcript(self, video_name: str) -> Optional[dict]:
+        """Get the transcript data for a video if it exists"""
+        try:
+            print("\n=== Transcript Lookup Details ===")  # Direct console output
+            print(f"Looking for transcript: {video_name}")
+            
+            # Get absolute paths for debugging
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            transcript_dir = os.path.join(current_dir, "static", "uploaded_videos", "transcripts")
+            transcript_path = os.path.join(transcript_dir, f"{video_name}_transcript.json")
+            
+            print(f"Current directory: {current_dir}")
+            print(f"Transcript directory: {transcript_dir}")
+            print(f"Full transcript path: {transcript_path}")
+            
+            logging.info(f"=== Transcript Lookup Details ===")
+            logging.info(f"Looking for transcript: {video_name}")
+            logging.info(f"Current directory: {current_dir}")
+            logging.info(f"Transcript directory: {transcript_dir}")
+            logging.info(f"Full transcript path: {transcript_path}")
+            
+            # Check if directories exist
+            if not os.path.exists(os.path.join(current_dir, "static")):
+                logging.error("'static' directory not found!")
+            if not os.path.exists(os.path.join(current_dir, "static", "uploaded_videos")):
+                logging.error("'uploaded_videos' directory not found!")
+            if not os.path.exists(transcript_dir):
+                logging.error("'transcripts' directory not found!")
+            
+            if not os.path.exists(transcript_path):
+                logging.warning(f"No transcript file found at {transcript_path}")
+                # List available transcripts
+                if os.path.exists(transcript_dir):
+                    available_transcripts = os.listdir(transcript_dir)
+                    logging.info(f"Available transcripts: {available_transcripts}")
+                return None
+
+            logging.info(f"Found transcript file at {transcript_path}")
+            with open(transcript_path, 'r', encoding='utf-8') as f:
+                transcript_data = json.load(f)
+                
+            logging.info("Successfully loaded transcript data")
+            return {
+                'video_name': transcript_data['video_name'],
+                'full_transcript': transcript_data['full_transcript'],
+                'timestamp': transcript_data['timestamp'],
+                'status': transcript_data['status']
+            }
+
+        except Exception as e:
+            logging.error(f"Error reading transcript for {video_name}: {str(e)}", exc_info=True)
+            return None

@@ -5,6 +5,7 @@ import logging
 import json
 from transcript import TranscriptionManager
 import datetime
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -12,9 +13,16 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("debug.log"),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
+
+# Add this line to see all debug messages
+logging.getLogger().setLevel(logging.DEBUG)
+
+# Also add some initial logging to verify it's working
+logging.info("=== Application Starting ===")
+logging.info(f"Current working directory: {os.getcwd()}")
 
 UPLOAD_FOLDER = os.path.join('static', 'uploaded_videos')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -185,6 +193,91 @@ class API:
             return {"success": False, "error": "Transcription not found"}
         except Exception as e:
             logging.error(f"Error getting transcription status: {e}")
+            return {"success": False, "error": str(e)}
+
+    def view_transcript(self, video_name):
+        """API endpoint to get transcript data"""
+        try:
+            print("\n=== View Transcript Request ===")
+            print(f"Video name: {video_name}")
+            print(f"Current working directory: {os.getcwd()}")
+            
+            logging.info(f"=== View Transcript Request ===")
+            logging.info(f"Video name: {video_name}")
+            logging.info(f"Current working directory: {os.getcwd()}")
+            
+            # First try getting from the transcription manager
+            print("Attempting to get transcript from TranscriptionManager...")
+            logging.info("Attempting to get transcript from TranscriptionManager...")
+            result = self.transcription_manager.get_transcript(video_name)
+            
+            if result:
+                logging.info(f"Found transcript for {video_name}")
+                return {"success": True, "data": result}
+            else:
+                logging.warning("No transcript found in file system")
+            
+            # If not found, check if it's still processing
+            logging.info("Checking transcription status...")
+            status = self.transcription_manager.get_transcription_status(video_name)
+            if status:
+                logging.info(f"Status found: {status.status.value}")
+                if status.status == TranscriptionStatus.PROCESSING:
+                    return {"success": False, "error": "Transcript is still processing"}
+                elif status.status == TranscriptionStatus.FAILED:
+                    return {"success": False, "error": f"Transcription failed: {status.error}"}
+                elif status.status == TranscriptionStatus.PENDING:
+                    return {"success": False, "error": "Transcription is pending"}
+            else:
+                logging.warning("No transcription status found")
+            
+            logging.warning(f"No transcript or status found for {video_name}")
+            return {"success": False, "error": "Transcript not found"}
+            
+        except Exception as e:
+            logging.error(f"Error viewing transcript: {str(e)}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    def get_transcript(self, video_name):
+        """Get transcript for a video"""
+        try:
+            print(f"\n=== Getting Transcript for {video_name} ===")
+            
+            # Look for transcript in the uploaded_videos/transcripts directory
+            transcript_path = os.path.join(UPLOAD_FOLDER, "transcripts", f"{video_name}_transcript.json")
+            print(f"Looking for transcript at: {transcript_path}")
+            
+            if os.path.exists(transcript_path):
+                print(f"Found transcript file at {transcript_path}")
+                with open(transcript_path, 'r', encoding='utf-8') as f:
+                    transcript_data = json.load(f)
+                return {"success": True, "data": transcript_data}
+            
+            # If not found in file, check transcription manager
+            print("Checking transcription manager...")
+            status = self.transcription_manager.get_transcription_status(video_name)
+            if status:
+                if status.status == TranscriptionStatus.COMPLETED and status.full_transcript:
+                    return {
+                        "success": True,
+                        "data": {
+                            "video_name": video_name,
+                            "full_transcript": status.full_transcript,
+                            "timestamp": str(datetime.datetime.now()),
+                            "status": status.status.value
+                        }
+                    }
+                elif status.status == TranscriptionStatus.PROCESSING:
+                    return {"success": False, "error": "Transcript is still processing"}
+                elif status.status == TranscriptionStatus.FAILED:
+                    return {"success": False, "error": f"Transcription failed: {status.error}"}
+            
+            print(f"No transcript found for {video_name}")
+            return {"success": False, "error": "Transcript not found"}
+            
+        except Exception as e:
+            print(f"Error getting transcript: {str(e)}")
+            logging.error(f"Error getting transcript: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
 
 def main():

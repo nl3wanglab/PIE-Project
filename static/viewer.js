@@ -52,14 +52,32 @@ document.addEventListener('DOMContentLoaded', function() {
     function loadFullTranscript() {
         transcriptContent.innerHTML = '<div class="alert alert-info">Loading transcript...</div>';
         if (window.pywebview && window.pywebview.api) {
-            window.pywebview.api.get_pure_transcript(videoPath).then(response => {
-                if (response.success) {
-                    transcriptContent.innerHTML = `<div class="transcript-segment">${response.text}</div>`;
+            // Get video name from the path
+            const videoName = videoPath.split('/').pop();  // Gets the filename from the path
+            console.log("Loading transcript for video:", videoName);
+            
+            window.pywebview.api.get_transcript(videoName).then(response => {
+                if (response.success && response.data) {
+                    console.log("Transcript loaded:", response.data);
+                    transcriptContent.innerHTML = `
+                        <div class="transcript-container">
+                            <h3>Transcript</h3>
+                            <p class="timestamp">Created: ${response.data.timestamp}</p>
+                            <div class="transcript-text">${response.data.full_transcript}</div>
+                        </div>`;
                 } else {
-                    transcriptContent.innerHTML = `<div class="alert alert-danger">Error loading transcript: ${response.error}</div>`;
+                    console.error("Failed to load transcript:", response.error);
+                    transcriptContent.innerHTML = `
+                        <div class="alert alert-danger">
+                            Error loading transcript: ${response.error || 'Transcript not found'}
+                        </div>`;
                 }
             }).catch(error => {
-                transcriptContent.innerHTML = `<div class="alert alert-danger">Error loading transcript: ${error}</div>`;
+                console.error("Error loading transcript:", error);
+                transcriptContent.innerHTML = `
+                    <div class="alert alert-danger">
+                        Error loading transcript: ${error}
+                    </div>`;
             });
         }
     }
