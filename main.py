@@ -111,16 +111,47 @@ class API:
 
     def delete_video(self, filename):
         try:
+            # Delete the video file
             file_path = os.path.join(UPLOAD_FOLDER, filename)
             if os.path.exists(file_path):
                 os.remove(file_path)
-                logging.info(f"Successfully deleted video: {filename}")
+                
+                # Delete associated transcript files if they exist
+                base_name = os.path.splitext(filename)[0]
+                transcript_files = [
+                    f"diarization_transcript_{base_name}.txt",
+                    f"full_transcription_{base_name}.txt",
+                    f"diarization_cache_{base_name}.json"
+                ]
+                
+                for transcript_file in transcript_files:
+                    transcript_path = os.path.join(os.path.dirname(UPLOAD_FOLDER), transcript_file)
+                    if os.path.exists(transcript_path):
+                        os.remove(transcript_path)
+                        logging.info(f"Deleted associated file: {transcript_file}")
+                
+                logging.info(f"Successfully deleted video and associated files: {filename}")
                 return {"success": True}
             else:
                 logging.warning(f"File not found for deletion: {filename}")
                 return {"success": False, "error": "File not found"}
         except Exception as e:
             logging.error(f"Error deleting video {filename}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def get_uploaded_videos(self):
+        """Return a list of all uploaded videos"""
+        try:
+            videos = []
+            for filename in os.listdir(self.upload_folder):
+                if filename.lower().endswith(('.mp4', '.avi', '.mov', '.mkv', '.wmv')):
+                    videos.append({
+                        'filename': filename,
+                        'path': os.path.join('uploaded_videos', filename)
+                    })
+            return {"success": True, "videos": videos}
+        except Exception as e:
+            logging.error(f"Error getting uploaded videos: {e}")
             return {"success": False, "error": str(e)}
 
 def main():

@@ -21,9 +21,10 @@
 
         .left-panel {
             display: grid;
-            grid-template-rows: 45% 55%;
+            grid-template-rows: auto 45% 55%;
             padding: 20px;
             gap: 20px;
+            position: relative;
         }
 
         .right-panel {
@@ -39,6 +40,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            margin-top: 40px;
         }
 
         .video-container video {
@@ -92,11 +94,43 @@
             height: calc(100% - 45px);
             overflow-y: auto;
         }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            padding: 8px 15px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #dee2e6;
+            border-radius: 20px;
+            color: #495057;
+            text-decoration: none;
+            font-size: 0.9em;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 10px;
+        }
+
+        .back-button:hover {
+            background-color: #f8f9fa;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+            color: #212529;
+            text-decoration: none;
+        }
+
+        .back-button i {
+            margin-right: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="main-container">
         <div class="left-panel">
+            <a href="index.html" class="back-button">
+                ← Back
+            </a>
             <div class="video-container">
                 <video id="videoPlayer" controls>
                     Your browser does not support the video tag.
