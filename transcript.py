@@ -9,6 +9,7 @@ import torchaudio
 from transformers import pipeline as transformers_pipeline, AutoModelForSpeechSeq2Seq, AutoTokenizer, AutoFeatureExtractor
 from huggingface_hub import login
 from pyannote.audio import Pipeline
+from pyannote.audio.pipelines.utils.hook import ProgressHook
 import numpy as np
 from tqdm import tqdm
 import torch
@@ -128,6 +129,22 @@ class TranscriptionManager:
             except Exception as e:
                 raise Exception(f"Failed to load audio file: {str(e)}")
             
+            # Perform diarization
+            print("Starting diarization...")
+            with ProgressHook() as hook:
+                diarization = self.diarization_pipeline(audio_path, hook=hook)
+            
+            # Convert diarization results to segments
+            diarized_segments = []
+            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                segment = {
+                    "start": turn.start,
+                    "end": turn.end,
+                    "speaker": speaker,
+                    "text": ""  # Will be filled with transcribed text
+                }
+                diarized_segments.append(segment)
+            
             # Process in chunks
             chunk_duration = 30  # seconds
             total_duration = audio.shape[1] / sample_rate
@@ -198,6 +215,23 @@ class TranscriptionManager:
                     # Continue with next chunk instead of failing completely
                     continue
 
+            # Align transcribed text with diarization segments
+            for segment in diarized_segments:
+                segment_start = segment["start"]
+                segment_end = segment["end"]
+                
+                # Find transcribed text that falls within this segment's time range
+                segment_text = []
+                for trans_segment in transcribed_segments:
+                    trans_start = trans_segment["timestamp"][0]
+                    trans_end = trans_segment["timestamp"][1]
+                    
+                    # Check for overlap
+                    if (trans_start <= segment_end and trans_end >= segment_start):
+                        segment_text.append(trans_segment["text"])
+                
+                segment["text"] = " ".join(segment_text)
+            
             # Create full transcript with timestamps
             full_transcript = {
                 'text': ' '.join(segment['text'] for segment in transcribed_segments),
@@ -214,6 +248,7 @@ class TranscriptionManager:
                 'guid': guid,
                 'full_transcript': full_transcript['text'],
                 'segments': full_transcript['segments'],
+                'diarized_segments': diarized_segments,
                 'timestamp': str(datetime.datetime.now()),
                 'status': TranscriptionStatus.COMPLETED.value
             }
