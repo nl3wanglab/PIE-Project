@@ -20,24 +20,25 @@ document.getElementById('videoSettingsForm').addEventListener('submit', function
     event.preventDefault();
     
     const videoFile = document.getElementById('videoFile').files[0];
-    const whisperModel = document.getElementById('whisperModel').value; // Get selected model
+    const whisperModel = document.getElementById('whisperModel').value;
+    const useDiarization = document.getElementById('useDiarization').checked;
 
-    // Prepare the data to send
-    const formData = new FormData();
-    formData.append('videoFile', videoFile);
-    formData.append('whisperModel', whisperModel); // Add model to form data
-
-    // Close the modal immediately
-    $('#settingsModal').modal('hide');
-
-    // Get form data
     if (!videoFile) {
         showMessage('No video file selected.', 'error');
         return;
     }
 
-    console.log(`Uploading video: ${videoFile.name}`);
-    uploadVideo(videoFile);
+    // Close the modal immediately
+    $('#settingsModal').modal('hide');
+
+    // Create FormData and append all settings
+    const formData = new FormData();
+    formData.append('videoFile', videoFile);
+    formData.append('whisperModel', whisperModel);
+    formData.append('useDiarization', useDiarization);
+
+    console.log(`Uploading video: ${videoFile.name} with diarization: ${useDiarization}`);
+    uploadVideo(videoFile, useDiarization);
 });
 
 function saveVideoInfo(videoInfo) {
@@ -136,22 +137,63 @@ function isImageFile(filename) {
 }
 
 // Modify the existing function to handle both video and image files
-function handleFileUpload(fileData, filename) {
-    if (isVideoFile(filename)) {
-        // Process video file
-        const videoUrl = URL.createObjectURL(fileData); // Assuming fileData is a Blob
-        updateCardWithMedia(loadingCard, filename, videoUrl, true);
-    } else if (isImageFile(filename)) {
-        // Process image file
-        const imageUrl = URL.createObjectURL(fileData); // Assuming fileData is a Blob
-        updateCardWithMedia(loadingCard, filename, imageUrl, false);
-    } else {
-        alert('Unsupported file type. Please select a video or image file.');
-        console.error('Unsupported file type.');
-        loadingCard.querySelector('.card-title').textContent = 'Error';
-        loadingCard.querySelector('.progress').remove();
-        loadingCard.querySelector('p').textContent = 'Unsupported file type.';
+function handleFileUpload(event) {
+    event.preventDefault();
+    const fileInput = document.getElementById('videoFile');
+    const useDiarization = document.getElementById('useDiarization').checked;
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert('Please select a file first!');
+        return;
     }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('useDiarization', useDiarization);
+
+    // Show upload status
+    const statusElement = document.getElementById('uploadStatus');
+    statusElement.innerHTML = `
+        <div class="alert alert-info">
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="sr-only">Loading...</span>
+            </div>
+            Uploading video...
+        </div>
+    `;
+
+    // Make API call to upload
+    fetch('/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            statusElement.innerHTML = `
+                <div class="alert alert-success">
+                    Upload successful! Processing video...
+                    ${useDiarization ? '<br>Speaker diarization enabled - this may take a few minutes.' : ''}
+                </div>
+            `;
+            // Additional handling as needed
+        } else {
+            statusElement.innerHTML = `
+                <div class="alert alert-danger">
+                    Upload failed: ${data.error}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        statusElement.innerHTML = `
+            <div class="alert alert-danger">
+                Upload failed: ${error.message}
+            </div>
+        `;
+    });
 }
 
 function deleteVideo(filename) {
@@ -276,7 +318,7 @@ function saveVideoGUID(originalFilename, guid) {
 }
 
 // Modify the uploadVideo function to handle GUIDs
-async function uploadVideo(file) {
+async function uploadVideo(file, useDiarization = false) {
     const chunkSize = 1024 * 1024; // 1MB chunks
     let offset = 0;
     let isFirstChunk = true;
@@ -327,7 +369,8 @@ async function uploadVideo(file) {
                 base64Chunk, 
                 guid ? `${guid}${file.name.substr(file.name.lastIndexOf('.'))}` : file.name,
                 isFirstChunk,
-                file.size
+                file.size,
+                useDiarization
             );
 
             if (!response.success) {

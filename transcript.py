@@ -81,10 +81,10 @@ class TranscriptionManager:
             use_auth_token=self.auth_token,
         )
 
-    def start_transcription(self, video_path: str, guid: str) -> None:
+    def start_transcription(self, video_path: str, guid: str, use_diarization: bool = False) -> None:
         """Start the transcription process for a video file"""
         try:
-            logging.info(f"Initializing transcription for GUID: {guid}")
+            logging.info(f"Initializing transcription for GUID: {guid} with diarization: {use_diarization}")
             
             # Create initial transcription result
             self.transcriptions[guid] = TranscriptionResult(
@@ -95,7 +95,7 @@ class TranscriptionManager:
             # Start transcription in a separate thread
             thread = threading.Thread(
                 target=self._process_transcription,
-                args=(video_path, guid),
+                args=(video_path, guid, use_diarization),
                 name=f"transcription-{guid}"
             )
             thread.daemon = True
@@ -107,7 +107,7 @@ class TranscriptionManager:
             logging.error(f"Error starting transcription: {e}")
             raise
 
-    def _process_transcription(self, video_path: str, guid: str):
+    def _process_transcription(self, video_path: str, guid: str, use_diarization: bool = False):
         """Process the transcription in a background thread"""
         print(f"\nStarting transcription for GUID: {guid}")
         
@@ -128,23 +128,7 @@ class TranscriptionManager:
                 
             except Exception as e:
                 raise Exception(f"Failed to load audio file: {str(e)}")
-            
-            # Perform diarization
-            print("Starting diarization...")
-            with ProgressHook() as hook:
-                diarization = self.diarization_pipeline(audio_path, hook=hook)
-            
-            # Convert diarization results to segments
-            diarized_segments = []
-            for turn, _, speaker in diarization.itertracks(yield_label=True):
-                segment = {
-                    "start": turn.start,
-                    "end": turn.end,
-                    "speaker": speaker,
-                    "text": ""  # Will be filled with transcribed text
-                }
-                diarized_segments.append(segment)
-            
+
             # Process in chunks
             chunk_duration = 30  # seconds
             total_duration = audio.shape[1] / sample_rate
@@ -166,7 +150,6 @@ class TranscriptionManager:
                     result = self.transcription_pipeline(
                         audio_chunk,
                         return_timestamps=True,
-                        generate_kwargs={"language": "en"}
                     )
                     
                     # Handle chunks and timestamps safely
@@ -202,7 +185,7 @@ class TranscriptionManager:
                     else:
                         # If no chunks with timestamps, create a single segment for this chunk
                         segment = {
-                            'text': result.get('text', ''),
+                            'text': result['text'],
                             'timestamp': [
                                 chunk_start_time,
                                 chunk_start_time + (end_sample - start_sample) / sample_rate
@@ -215,44 +198,71 @@ class TranscriptionManager:
                     # Continue with next chunk instead of failing completely
                     continue
 
-            # Align transcribed text with diarization segments
-            for segment in diarized_segments:
-                segment_start = segment["start"]
-                segment_end = segment["end"]
-                
-                # Find transcribed text that falls within this segment's time range
-                segment_text = []
-                for trans_segment in transcribed_segments:
-                    trans_start = trans_segment["timestamp"][0]
-                    trans_end = trans_segment["timestamp"][1]
-                    
-                    # Check for overlap
-                    if (trans_start <= segment_end and trans_end >= segment_start):
-                        segment_text.append(trans_segment["text"])
-                
-                segment["text"] = " ".join(segment_text)
-            
-            # Create full transcript with timestamps
+            # Create full transcript
             full_transcript = {
                 'text': ' '.join(segment['text'] for segment in transcribed_segments),
                 'segments': transcribed_segments
             }
 
-            # Save to file
+            # Save initial transcript
             transcript_dir = os.path.join(os.path.dirname(video_path), 'transcripts')
             os.makedirs(transcript_dir, exist_ok=True)
-            
             transcript_path = os.path.join(transcript_dir, f"{guid}_transcript.json")
             
             transcript_data = {
                 'guid': guid,
                 'full_transcript': full_transcript['text'],
                 'segments': full_transcript['segments'],
-                'diarized_segments': diarized_segments,
                 'timestamp': str(datetime.datetime.now()),
                 'status': TranscriptionStatus.COMPLETED.value
             }
             
+            # After transcription is complete, process diarization if requested
+            if use_diarization:
+                try:
+                    print("\nStarting diarization process...")
+                    # Run diarization
+                    with ProgressHook() as hook:
+                        diarization = self.diarization_pipeline(audio_path, hook=hook)
+                    
+                    # Convert diarization results to segments
+                    diarized_segments = []
+                    for turn, _, speaker in diarization.itertracks(yield_label=True):
+                        segment = {
+                            "start": turn.start,
+                            "end": turn.end,
+                            "speaker": speaker,
+                            "text": ""  # Will be filled with transcribed text
+                        }
+                        diarized_segments.append(segment)
+                    
+                    # Align transcribed text with diarization segments
+                    for segment in diarized_segments:
+                        segment_start = segment["start"]
+                        segment_end = segment["end"]
+                        
+                        # Find transcribed text that falls within this segment's time range
+                        segment_text = []
+                        for trans_segment in transcribed_segments:
+                            trans_start = trans_segment["timestamp"][0]
+                            trans_end = trans_segment["timestamp"][1]
+                            
+                            # Check for overlap
+                            if (trans_start <= segment_end and trans_end >= segment_start):
+                                segment_text.append(trans_segment["text"])
+                        
+                        segment["text"] = " ".join(segment_text)
+                    
+                    # Add diarized segments to transcript data
+                    transcript_data['diarized_segments'] = diarized_segments
+                    print("Diarization completed successfully")
+                
+                except Exception as e:
+                    print(f"Error during diarization: {str(e)}")
+                    logging.error(f"Diarization failed: {str(e)}")
+                    # Continue with saving the transcript even if diarization fails
+            
+            # Save the final transcript
             print(f"Saving transcript to: {transcript_path}")
             with open(transcript_path, 'w', encoding='utf-8') as f:
                 json.dump(transcript_data, f, ensure_ascii=False, indent=2)
@@ -261,7 +271,10 @@ class TranscriptionManager:
             self.transcriptions[guid].status = TranscriptionStatus.COMPLETED
             self.transcriptions[guid].full_transcript = full_transcript['text']
             self.transcriptions[guid].segments = full_transcript['segments']
-            print(f"\nTranscription completed and saved for GUID: {guid}")
+            if use_diarization and 'diarized_segments' in transcript_data:
+                self.transcriptions[guid].diarized_segments = transcript_data['diarized_segments']
+            
+            print(f"\nTranscription and processing completed for GUID: {guid}")
 
         except Exception as e:
             error_msg = f"Transcription failed for GUID {guid}: {str(e)}"
@@ -335,3 +348,64 @@ class TranscriptionManager:
         except Exception as e:
             logging.error(f"Error reading transcript for GUID {guid}: {str(e)}", exc_info=True)
             return None
+
+    def process_diarization(self, guid: str):
+        """Process diarization separately after transcription is complete"""
+        try:
+            # Get the existing transcript
+            transcript_result = self.get_transcript(guid)
+            if not transcript_result:
+                raise Exception("Transcript not found")
+
+            # Get the audio path
+            audio_path = os.path.join(UPLOAD_FOLDER, f"{guid}.wav")
+            if not os.path.exists(audio_path):
+                raise Exception("Audio file not found")
+
+            print("Starting diarization...")
+            with ProgressHook() as hook:
+                diarization = self.diarization_pipeline(audio_path, hook=hook)
+            
+            # Convert diarization results to segments
+            diarized_segments = []
+            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                segment = {
+                    "start": turn.start,
+                    "end": turn.end,
+                    "speaker": speaker,
+                    "text": ""  # Will be filled with transcribed text
+                }
+                diarized_segments.append(segment)
+            
+            # Align transcribed text with diarization segments
+            for segment in diarized_segments:
+                segment_start = segment["start"]
+                segment_end = segment["end"]
+                
+                # Find transcribed text that falls within this segment's time range
+                segment_text = []
+                for trans_segment in transcript_result['segments']:
+                    trans_start = trans_segment["timestamp"][0]
+                    trans_end = trans_segment["timestamp"][1]
+                    
+                    # Check for overlap
+                    if (trans_start <= segment_end and trans_end >= segment_start):
+                        segment_text.append(trans_segment["text"])
+                
+                segment["text"] = " ".join(segment_text)
+
+            # Update the transcript file with diarization data
+            transcript_path = os.path.join(UPLOAD_FOLDER, 'transcripts', f"{guid}_transcript.json")
+            with open(transcript_path, 'r', encoding='utf-8') as f:
+                transcript_data = json.load(f)
+            
+            transcript_data['diarized_segments'] = diarized_segments
+            
+            with open(transcript_path, 'w', encoding='utf-8') as f:
+                json.dump(transcript_data, f, ensure_ascii=False, indent=2)
+
+            return True
+
+        except Exception as e:
+            logging.error(f"Diarization failed for GUID {guid}: {str(e)}")
+            return False

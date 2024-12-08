@@ -125,10 +125,10 @@ class API:
             logging.error(f"Error getting original filename: {e}")
         return None
 
-    def upload_video_chunk(self, file_data, filename, is_first_chunk, total_size):
+    def upload_video_chunk(self, file_data, filename, is_first_chunk, total_size, use_diarization=False):
         """Handle video chunk upload and start transcription when complete"""
         try:
-            logging.info(f"Processing chunk upload: {filename} (first_chunk: {is_first_chunk}, total_size: {total_size})")
+            logging.info(f"Processing chunk upload: {filename} (first_chunk: {is_first_chunk}, total_size: {total_size}, diarization: {use_diarization})")
             
             result = self._handle_upload(file_data, filename, is_first_chunk)
             
@@ -147,7 +147,7 @@ class API:
                     # Check if upload is complete
                     if current_size >= total_size:
                         logging.info(f"Upload complete for {file_guid}, starting transcription")
-                        self.transcription_manager.start_transcription(file_path, file_guid)
+                        self.transcription_manager.start_transcription(file_path, file_guid, use_diarization)
                         result["transcriptionStatus"] = "processing"
                     else:
                         logging.info(f"Waiting for more chunks... ({current_size}/{total_size} bytes)")
@@ -158,7 +158,7 @@ class API:
                 
             return result
         except Exception as e:
-            logging.error(f"Error in upload_video_chunk: {e}")
+            logging.error(f"Error in upload_video_chunk: {str(e)}")
             return {"success": False, "error": str(e)}
 
     def test_connection(self):
