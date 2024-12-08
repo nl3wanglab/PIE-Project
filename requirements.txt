@@ -4,3 +4,4 @@ torch
 numpy==1.23.4
 pywebview
 opencv-python-headless
+moviepy
