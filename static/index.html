@@ -39,6 +39,16 @@
                             <label for="videoFile">Select Video File</label>
                             <input type="file" class="form-control-file" id="videoFile" accept="video/*" required>
                         </div>
+                        <div class="form-group">
+                            <label for="whisperModel">Select Whisper Model</label>
+                            <select class="form-control" id="whisperModel">
+                                <option value="openai/whisper-tiny">Whisper Tiny</option>
+                                <option value="openai/whisper-base">Whisper Base</option>
+                                <option value="openai/whisper-small">Whisper Small</option>
+                                <option value="openai/whisper-medium">Whisper Medium</option>
+                                <option value="openai/whisper-large">Whisper Large</option>
+                            </select>
+                        </div>
                         <button type="submit" class="btn btn-primary">Submit</button>
                     </form>
                 </div>

@@ -19,11 +19,18 @@ function arrayBufferToBase64(buffer) {
 document.getElementById('videoSettingsForm').addEventListener('submit', function(event) {
     event.preventDefault();
     
+    const videoFile = document.getElementById('videoFile').files[0];
+    const whisperModel = document.getElementById('whisperModel').value; // Get selected model
+
+    // Prepare the data to send
+    const formData = new FormData();
+    formData.append('videoFile', videoFile);
+    formData.append('whisperModel', whisperModel); // Add model to form data
+
     // Close the modal immediately
     $('#settingsModal').modal('hide');
 
     // Get form data
-    const videoFile = document.getElementById('videoFile').files[0];
     if (!videoFile) {
         showMessage('No video file selected.', 'error');
         return;
@@ -492,3 +499,7 @@ function showSettingsModal() {
         }
     }
 }
+
+document.getElementById('returnButton').addEventListener('click', function() {
+    window.history.back(); // Go back to the previous page
+});

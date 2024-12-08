@@ -92,9 +92,20 @@
             height: calc(100% - 45px);
             overflow-y: auto;
         }
+
+        .return-button-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
+    <div class="return-button-container">
+        <button id="returnButton" class="btn btn-secondary">Return</button>
+    </div>
+    
     <div class="main-container">
         <div class="left-panel">
             <div class="video-container">

@@ -146,4 +146,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const remainingSeconds = Math.floor(seconds % 60);
         return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
+
+    // Add this event listener for the Return button
+    document.getElementById('returnButton').addEventListener('click', function() {
+        window.history.back(); // Go back to the previous page
+    });
+
+    // Additional code to load the video can go here
 }); 
