@@ -151,6 +151,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         transcriptContent.innerHTML = '';
         transcriptContent.appendChild(container);
+
+        // Initialize and update charts
+        initializeCharts();
+        updateCharts(transcriptData);
     }
 
     function formatTimestamp(seconds) {
@@ -186,4 +190,320 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Additional code to load the video can go here
-}); 
+});
+
+function initializeCharts() {
+    // Initialize speaking time chart
+    const speakingTimeCtx = document.getElementById('speakingTimeChart').getContext('2d');
+    window.speakingTimeChart = new Chart(speakingTimeCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Speaking Time (seconds)',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Speaking Time Distribution'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Duration (seconds)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Timeline'
+                    }
+                }
+            }
+        }
+    });
+
+    // Initialize word frequency chart
+    const wordFrequencyCtx = document.getElementById('wordFrequencyChart').getContext('2d');
+    window.wordFrequencyChart = new Chart(wordFrequencyCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Word Frequency',
+                data: [],
+                borderColor: 'rgb(153, 102, 255)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Word Frequency Over Time'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Word Count'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Timeline'
+                    }
+                }
+            }
+        }
+    });
+
+    // Initialize heart rate chart
+    const heartRateCtx = document.getElementById('heartRateChart').getContext('2d');
+    window.heartRateChart = new Chart(heartRateCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Heart Rate (BPM)',
+                data: [],
+                borderColor: 'rgb(255, 99, 132)',
+                tension: 0.1,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Heart Rate Over Time'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    title: {
+                        display: true,
+                        text: 'BPM'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Timeline'
+                    }
+                }
+            }
+        }
+    });
+
+    // Initialize emotions chart
+    const emotionsCtx = document.getElementById('emotionsChart').getContext('2d');
+    window.emotionsChart = new Chart(emotionsCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: 'Happy',
+                    data: [],
+                    borderColor: 'rgb(255, 206, 86)',
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'Sad',
+                    data: [],
+                    borderColor: 'rgb(54, 162, 235)',
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'Angry',
+                    data: [],
+                    borderColor: 'rgb(255, 99, 132)',
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'Neutral',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Emotion Detection Over Time'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 1,
+                    title: {
+                        display: true,
+                        text: 'Confidence Score'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Timeline'
+                    }
+                }
+            }
+        }
+    });
+
+    // Initialize emotions pie chart
+    const emotionsPieCtx = document.getElementById('emotionsPieChart').getContext('2d');
+    window.emotionsPieChart = new Chart(emotionsPieCtx, {
+        type: 'pie',
+        data: {
+            labels: ['Happy', 'Sad', 'Angry', 'Neutral'],
+            datasets: [{
+                data: [0, 0, 0, 0],
+                backgroundColor: [
+                    'rgb(255, 206, 86)',   // Happy - yellow
+                    'rgb(54, 162, 235)',    // Sad - blue
+                    'rgb(255, 99, 132)',    // Angry - red
+                    'rgb(75, 192, 192)'     // Neutral - green
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Overall Emotion Distribution'
+                },
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+}
+
+function updateCharts(transcriptData) {
+    if (!transcriptData || !transcriptData.segments) return;
+
+    // Process data for speaking time chart
+    const timeData = transcriptData.segments.map(segment => {
+        const duration = segment.timestamp[1] - segment.timestamp[0];
+        return {
+            time: formatTimestamp(segment.timestamp[0]),
+            duration: duration
+        };
+    });
+
+    // Process data for word frequency chart
+    const wordData = transcriptData.segments.map(segment => {
+        return {
+            time: formatTimestamp(segment.timestamp[0]),
+            wordCount: segment.text.split(/\s+/).length
+        };
+    });
+
+    // Update speaking time chart
+    window.speakingTimeChart.data.labels = timeData.map(d => d.time);
+    window.speakingTimeChart.data.datasets[0].data = timeData.map(d => d.duration);
+    window.speakingTimeChart.update();
+
+    // Update word frequency chart
+    window.wordFrequencyChart.data.labels = wordData.map(d => d.time);
+    window.wordFrequencyChart.data.datasets[0].data = wordData.map(d => d.wordCount);
+    window.wordFrequencyChart.update();
+
+    // Update heart rate chart (assuming heart rate data is available in transcriptData)
+    if (transcriptData.heartRate) {
+        window.heartRateChart.data.labels = transcriptData.heartRate.map(d => formatTimestamp(d.timestamp));
+        window.heartRateChart.data.datasets[0].data = transcriptData.heartRate.map(d => d.bpm);
+        window.heartRateChart.update();
+    }
+
+    // Update emotions chart (assuming emotion data is available in transcriptData)
+    if (transcriptData.emotions) {
+        const emotions = ['Happy', 'Sad', 'Angry', 'Neutral'];
+        const timestamps = transcriptData.emotions.map(d => formatTimestamp(d.timestamp));
+        
+        window.emotionsChart.data.labels = timestamps;
+        
+        emotions.forEach((emotion, index) => {
+            window.emotionsChart.data.datasets[index].data = 
+                transcriptData.emotions.map(d => d[emotion.toLowerCase()]);
+        });
+        
+        window.emotionsChart.update();
+    }
+
+    // Update emotions pie chart
+    if (transcriptData.emotions) {
+        const emotions = ['Happy', 'Sad', 'Angry', 'Neutral'];
+        
+        // Calculate average emotion values
+        const emotionSums = emotions.reduce((sums, emotion) => {
+            const values = transcriptData.emotions.map(d => d[emotion.toLowerCase()]);
+            sums[emotion] = values.reduce((a, b) => a + b, 0) / values.length;
+            return sums;
+        }, {});
+
+        // Update pie chart
+        window.emotionsPieChart.data.datasets[0].data = emotions.map(emotion => 
+            (emotionSums[emotion] * 100).toFixed(1)
+        );
+        window.emotionsPieChart.update();
+
+        // Add percentages to labels
+        window.emotionsPieChart.data.labels = emotions.map(emotion => 
+            `${emotion} (${(emotionSums[emotion] * 100).toFixed(1)}%)`
+        );
+    }
+}
+
+// Add helper function to calculate emotion percentages
+function calculateEmotionPercentages(emotionsData) {
+    const totalSamples = emotionsData.length;
+    const emotionSums = emotionsData.reduce((sums, sample) => {
+        Object.keys(sample).forEach(emotion => {
+            if (emotion !== 'timestamp') {
+                sums[emotion] = (sums[emotion] || 0) + sample[emotion];
+            }
+        });
+        return sums;
+    }, {});
+
+    // Convert sums to percentages
+    Object.keys(emotionSums).forEach(emotion => {
+        emotionSums[emotion] = (emotionSums[emotion] / totalSamples) * 100;
+    });
+
+    return emotionSums;
+} 
