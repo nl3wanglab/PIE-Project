@@ -132,6 +132,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const startTime = segment.timestamp[0];
             const endTime = segment.timestamp[1];
             
+            // Add data attributes for time tracking
+            segmentDiv.dataset.start = startTime;
+            segmentDiv.dataset.end = endTime;
+            
             segmentDiv.innerHTML = `
                 <div class="segment-timestamp" data-start="${startTime}">
                     ${formatTimestamp(startTime)} - ${formatTimestamp(endTime)}
@@ -149,6 +153,7 @@ document.addEventListener('DOMContentLoaded', function() {
             container.appendChild(segmentDiv);
         });
 
+        const transcriptContent = document.getElementById('transcriptContent');
         transcriptContent.innerHTML = '';
         transcriptContent.appendChild(container);
 
@@ -168,23 +173,55 @@ document.addEventListener('DOMContentLoaded', function() {
         window.history.back(); // Go back to the previous page
     });
 
-    // Add video timeupdate handler to highlight current segment
+    // Modify the timeupdate event listener for continuous scrolling
     videoPlayer.addEventListener('timeupdate', function() {
         const currentTime = this.currentTime;
         const segments = document.querySelectorAll('.transcript-segment');
+        const transcriptContent = document.getElementById('transcriptContent');
+        let activeSegmentFound = false;
         
         segments.forEach(segment => {
             const start = parseFloat(segment.dataset.start);
             const end = parseFloat(segment.dataset.end);
             
+            // Check if current time is within this segment
             if (currentTime >= start && currentTime <= end) {
+                activeSegmentFound = true;
+                
+                // Always update scroll position based on progress within segment
+                const segmentDuration = end - start;
+                const progress = (currentTime - start) / segmentDuration;
+                
+                // Get segment dimensions
+                const segmentRect = segment.getBoundingClientRect();
+                const containerRect = transcriptContent.getBoundingClientRect();
+                
+                // Calculate the target scroll position
+                const segmentTop = segment.offsetTop;
+                const containerHeight = transcriptContent.clientHeight;
+                
+                // Calculate progressive scroll position
+                // Start with segment at 33% from top when it begins
+                // End with segment at 66% from top when it ends
+                const startOffset = containerHeight * 0.33;
+                const endOffset = containerHeight * 0.66;
+                const scrollOffset = startOffset + (endOffset - startOffset) * progress;
+                
+                const targetScrollTop = segmentTop - scrollOffset;
+                
+                // Smooth scroll to position
+                transcriptContent.scrollTo({
+                    top: targetScrollTop,
+                    behavior: 'auto'
+                });
+                
+                // Handle highlighting
                 if (!segment.classList.contains('current-segment')) {
                     segments.forEach(s => s.classList.remove('current-segment'));
                     segment.classList.add('current-segment');
-                    
-                    // Scroll segment into view if needed
-                    segment.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }
+            } else if (!activeSegmentFound) {
+                segment.classList.remove('current-segment');
             }
         });
     });
@@ -193,6 +230,26 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializeCharts() {
+    // Add this common configuration object for click interactions
+    const clickInteractionConfig = {
+        onClick: (event, elements) => {
+            if (elements && elements.length > 0) {
+                const index = elements[0].index;
+                const timestamps = event.chart.data.labels;
+                const timeString = timestamps[index];
+                const seconds = timeStringToSeconds(timeString);
+                
+                // Set video to that timestamp
+                const videoPlayer = document.getElementById('videoPlayer');
+                videoPlayer.currentTime = seconds;
+                videoPlayer.play();
+                
+                // Highlight corresponding transcript segment
+                highlightTranscriptSegment(seconds);
+            }
+        }
+    };
+
     // Initialize speaking time chart
     const speakingTimeCtx = document.getElementById('speakingTimeChart').getContext('2d');
     window.speakingTimeChart = new Chart(speakingTimeCtx, {
@@ -229,6 +286,14 @@ function initializeCharts() {
                         text: 'Timeline'
                     }
                 }
+            },
+            ...clickInteractionConfig,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            onHover: (event, elements) => {
+                event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
             }
         }
     });
@@ -269,6 +334,14 @@ function initializeCharts() {
                         text: 'Timeline'
                     }
                 }
+            },
+            ...clickInteractionConfig,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            onHover: (event, elements) => {
+                event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
             }
         }
     });
@@ -310,6 +383,14 @@ function initializeCharts() {
                         text: 'Timeline'
                     }
                 }
+            },
+            ...clickInteractionConfig,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            onHover: (event, elements) => {
+                event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
             }
         }
     });
@@ -375,6 +456,14 @@ function initializeCharts() {
                         text: 'Timeline'
                     }
                 }
+            },
+            ...clickInteractionConfig,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            onHover: (event, elements) => {
+                event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
             }
         }
     });
@@ -414,6 +503,12 @@ function initializeCharts() {
 
 function updateCharts(transcriptData) {
     if (!transcriptData || !transcriptData.segments) return;
+
+    // Store the original timestamps for click handling
+    window.timestampData = transcriptData.segments.map(segment => ({
+        start: segment.timestamp[0],
+        end: segment.timestamp[1]
+    }));
 
     // Process data for speaking time chart
     const timeData = transcriptData.segments.map(segment => {
@@ -506,4 +601,136 @@ function calculateEmotionPercentages(emotionsData) {
     });
 
     return emotionSums;
-} 
+}
+
+// Add these new helper functions
+function timeStringToSeconds(timeString) {
+    const [minutes, seconds] = timeString.split(':').map(Number);
+    return minutes * 60 + seconds;
+}
+
+function highlightTranscriptSegment(targetTime) {
+    const segments = document.querySelectorAll('.transcript-segment');
+    segments.forEach(segment => {
+        const start = parseFloat(segment.dataset.start);
+        const end = parseFloat(segment.dataset.end);
+        
+        if (targetTime >= start && targetTime <= end) {
+            // Remove highlight from all segments
+            segments.forEach(s => s.classList.remove('current-segment'));
+            
+            // Add highlight to current segment
+            segment.classList.add('current-segment');
+            
+            // Scroll segment into view
+            segment.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    });
+}
+
+// Add this CSS class if not already present
+function addStyleToDocument() {
+    const style = document.createElement('style');
+    style.textContent = `
+        .chart-container {
+            cursor: pointer;
+        }
+        .chart-container:hover {
+            background-color: rgba(0,0,0,0.02);
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// Call this when the document loads
+document.addEventListener('DOMContentLoaded', function() {
+    addStyleToDocument();
+    // ... rest of your initialization code ...
+});
+
+// Add this after your existing code
+document.getElementById('heartRateFile').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        const data = parseHeartRateData(text);
+        if (data) {
+            updateHeartRateChart(data);
+            displayHeartRateTable(data);
+        }
+    };
+    reader.readAsText(file);
+});
+
+function parseHeartRateData(csvText) {
+    try {
+        const rows = csvText.split('\n');
+        const data = rows
+            .map(row => {
+                const [timeStr, bpmStr] = row.split(',').map(s => s.trim());
+                if (!timeStr || !bpmStr) return null;
+                
+                // Parse time (expecting format like "MM:SS" or "HH:MM:SS")
+                const timeComponents = timeStr.split(':').map(Number);
+                let seconds = 0;
+                if (timeComponents.length === 2) {
+                    seconds = timeComponents[0] * 60 + timeComponents[1];
+                } else if (timeComponents.length === 3) {
+                    seconds = timeComponents[0] * 3600 + timeComponents[1] * 60 + timeComponents[2];
+                }
+
+                const bpm = parseFloat(bpmStr);
+                if (isNaN(seconds) || isNaN(bpm)) return null;
+
+                return { timestamp: seconds, bpm: bpm };
+            })
+            .filter(item => item !== null);
+
+        return data;
+    } catch (error) {
+        console.error('Error parsing heart rate data:', error);
+        alert('Error parsing file. Please ensure it\'s in the correct format (Time,BPM)');
+        return null;
+    }
+}
+
+function updateHeartRateChart(data) {
+    // Sort data by timestamp
+    data.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Update the heart rate chart
+    window.heartRateChart.data.labels = data.map(d => formatTimestamp(d.timestamp));
+    window.heartRateChart.data.datasets[0].data = data.map(d => d.bpm);
+    window.heartRateChart.update();
+
+    // Store the data for later use
+    window.heartRateData = data;
+}
+
+function displayHeartRateTable(data) {
+    const tableBody = document.getElementById('heartRateTableBody');
+    tableBody.innerHTML = data
+        .map(row => `
+            <tr>
+                <td>${formatTimestamp(row.timestamp)}</td>
+                <td>${row.bpm}</td>
+            </tr>
+        `)
+        .join('');
+}
+
+// Update the existing updateCharts function to use the loaded heart rate data
+const originalUpdateCharts = updateCharts;
+updateCharts = function(transcriptData) {
+    originalUpdateCharts(transcriptData);
+    
+    // If we have heart rate data loaded from file, use that instead
+    if (window.heartRateData) {
+        window.heartRateChart.data.labels = window.heartRateData.map(d => formatTimestamp(d.timestamp));
+        window.heartRateChart.data.datasets[0].data = window.heartRateData.map(d => d.bpm);
+        window.heartRateChart.update();
+    }
+}; 

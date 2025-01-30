@@ -7,6 +7,10 @@ from transcript import TranscriptionManager, TranscriptionStatus
 import datetime
 import sys
 import uuid
+import noisereduce as nr
+import soundfile as sf
+import numpy as np
+from pydub import AudioSegment
 
 # Configure logging
 logging.basicConfig(
@@ -31,68 +35,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 class API:
     def __init__(self):
         self.upload_folder = os.path.join('static', 'uploaded_videos')
-        self.transcription_manager = TranscriptionManager()
+        # Initialize with default model
+        self.transcription_manager = TranscriptionManager(model_size="base")
         
-    def _handle_upload(self, file_data, filename, is_first_chunk):
-        """Handle the upload of a video chunk"""
-        try:
-            # Check file extension
-            allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
-            file_extension = os.path.splitext(filename)[1].lower()
-            
-            if file_extension not in allowed_extensions:
-                error_msg = (
-                    f"File '{filename}' is not supported.\n"
-                    f"Only video files are allowed.\n"
-                    f"Supported formats: {', '.join(allowed_extensions)}"
-                )
-                logging.warning(f"Invalid file upload attempt: {error_msg}")
-                return {"success": False, "error": error_msg}
-
-            # Generate or retrieve GUID
-            if is_first_chunk:
-                file_guid = str(uuid.uuid4())
-            else:
-                # For subsequent chunks, extract GUID from the filename
-                file_guid = os.path.splitext(filename)[0]  # Assuming filename is the GUID for subsequent chunks
-                
-            if not file_guid:
-                return {"success": False, "error": "Invalid file identifier"}
-
-            # Create the full path with GUID
-            guid_filename = f"{file_guid}{file_extension}"
-            file_path = os.path.join(UPLOAD_FOLDER, guid_filename)
-            
-            # Decode the base64 file data
-            try:
-                file_data = base64.b64decode(file_data.split(',')[1])
-            except Exception as e:
-                logging.error(f"Error decoding base64 data: {e}")
-                return {"success": False, "error": "Invalid file data"}
-
-            # Write the file chunk
-            mode = 'wb' if is_first_chunk else 'ab'
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
-            with open(file_path, mode) as f:
-                f.write(file_data)
-            
-            logging.info(f"Chunk written to {file_path}")
-            
-            # Store filename mapping if this is the first chunk
-            if is_first_chunk:
-                self._save_filename_mapping(file_guid, filename)
-            
-            return {
-                "success": True, 
-                "path": os.path.join('uploaded_videos', guid_filename),
-                "guid": file_guid,
-                "original_filename": filename
-            }
-        except Exception as e:
-            logging.error(f"Error saving video chunk {filename}: {e}")
-            return {"success": False, "error": str(e)}
-
     def _save_filename_mapping(self, guid, original_filename):
         """Save mapping between GUID and original filename"""
         mapping_file = os.path.join(UPLOAD_FOLDER, 'filename_mapping.json')
@@ -125,38 +70,192 @@ class API:
             logging.error(f"Error getting original filename: {e}")
         return None
 
-    def upload_video_chunk(self, file_data, filename, is_first_chunk, total_size, use_diarization=False):
-        """Handle video chunk upload and start transcription when complete"""
+    def _reduce_noise(self, audio_path):
+        """Apply noise reduction to audio file"""
         try:
-            logging.info(f"Processing chunk upload: {filename} (first_chunk: {is_first_chunk}, total_size: {total_size}, diarization: {use_diarization})")
+            logging.info(f"Applying noise reduction to {audio_path}")
             
-            result = self._handle_upload(file_data, filename, is_first_chunk)
+            # Convert video to wav if needed
+            if not audio_path.endswith('.wav'):
+                audio = AudioSegment.from_file(audio_path)
+                wav_path = os.path.splitext(audio_path)[0] + '.wav'
+                audio.export(wav_path, format='wav')
+            else:
+                wav_path = audio_path
+
+            # Load audio file
+            data, rate = sf.read(wav_path)
             
-            if result["success"]:
-                file_guid = result["guid"]
-                file_extension = os.path.splitext(filename)[1]
-                file_path = os.path.join(UPLOAD_FOLDER, f"{file_guid}{file_extension}")
+            # Convert to mono if stereo
+            if len(data.shape) > 1:
+                data = np.mean(data, axis=1)
+
+            # Apply noise reduction
+            reduced_noise = nr.reduce_noise(
+                y=data,
+                sr=rate,
+                prop_decrease=0.75,
+                stationary=True
+            )
+
+            # Save processed audio
+            processed_path = os.path.splitext(audio_path)[0] + '_processed.wav'
+            sf.write(processed_path, reduced_noise, rate)
+            
+            logging.info(f"Noise reduction complete. Saved to {processed_path}")
+            return processed_path
+
+        except Exception as e:
+            logging.error(f"Error during noise reduction: {e}")
+            return audio_path  # Return original path if processing fails
+
+    def upload_video(self, file_data, filename, use_diarization=False, model_size="base"):
+        """Handle video upload and start transcription"""
+        try:
+            logging.info(f"Processing video upload: {filename} (diarization: {use_diarization}, model: {model_size})")
+            
+            # Validate model size
+            valid_models = ["tiny", "base", "small", "medium", "large"]
+            if model_size not in valid_models:
+                logging.warning(f"Invalid model size {model_size}, falling back to base")
+                model_size = "base"
                 
-                try:
-                    current_size = os.path.getsize(file_path)
-                    upload_progress = (current_size / total_size) * 100
-                    result["uploadProgress"] = upload_progress
-                    
-                    logging.info(f"Upload progress for {file_guid}: {upload_progress:.1f}%")
-                    
-                    # Check if upload is complete
-                    if current_size >= total_size:
-                        logging.info(f"Upload complete for {file_guid}, starting transcription")
-                        self.transcription_manager.start_transcription(file_path, file_guid, use_diarization)
-                        result["transcriptionStatus"] = "processing"
-                    else:
-                        logging.info(f"Waiting for more chunks... ({current_size}/{total_size} bytes)")
-                        result["transcriptionStatus"] = "uploading"
-                except Exception as e:
-                    logging.error(f"Error checking file size: {e}")
-                    return {"success": False, "error": str(e)}
+            # Check file extension
+            allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
+            file_extension = os.path.splitext(filename)[1].lower()
+            
+            if file_extension not in allowed_extensions:
+                error_msg = (
+                    f"File '{filename}' is not supported.\n"
+                    f"Only video files are allowed.\n"
+                    f"Supported formats: {', '.join(allowed_extensions)}"
+                )
+                logging.warning(f"Invalid file upload attempt: {error_msg}")
+                return {"success": False, "error": error_msg}
+
+            # Generate GUID
+            file_guid = str(uuid.uuid4())
+            guid_filename = f"{file_guid}{file_extension}"
+            file_path = os.path.join(UPLOAD_FOLDER, guid_filename)
+
+            try:
+                # Decode the base64 file data
+                file_data = base64.b64decode(file_data.split(',')[1])
+            except Exception as e:
+                logging.error(f"Error decoding base64 data: {e}")
+                return {"success": False, "error": "Invalid file data"}
+
+            # Write the file
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+            
+            logging.info(f"File written to {file_path}")
+            
+            # Store filename mapping
+            self._save_filename_mapping(file_guid, filename)
+            
+            # Start transcription immediately with specified model
+            self.transcription_manager.start_transcription(
+                file_path, 
+                file_guid, 
+                use_diarization,
+                model_size=model_size
+            )
+
+            return {
+                "success": True,
+                "path": os.path.join('uploaded_videos', guid_filename),
+                "guid": file_guid,
+                "original_filename": filename,
+                "transcriptionStatus": "processing",
+                "model": model_size
+            }
+
+        except Exception as e:
+            logging.error(f"Error in upload_video: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def upload_video_chunk(self, file_data, filename, is_first_chunk, total_size, use_diarization=False, model_size="base"):
+        """Handle video upload and start transcription"""
+        try:
+            logging.info(f"Processing video upload: {filename} (diarization: {use_diarization}, model: {model_size})")
+            
+            # Validate model size
+            valid_models = ["tiny", "base", "small", "medium", "large"]
+            if model_size not in valid_models:
+                logging.warning(f"Invalid model size {model_size}, falling back to base")
+                model_size = "base"
+            
+            # Check file extension
+            allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
+            file_extension = os.path.splitext(filename)[1].lower()
+            
+            if file_extension not in allowed_extensions:
+                error_msg = (
+                    f"File '{filename}' is not supported.\n"
+                    f"Only video files are allowed.\n"
+                    f"Supported formats: {', '.join(allowed_extensions)}"
+                )
+                logging.warning(f"Invalid file upload attempt: {error_msg}")
+                return {"success": False, "error": error_msg}
+
+            # Generate GUID for first chunk only
+            if is_first_chunk:
+                file_guid = str(uuid.uuid4())
+                self._save_filename_mapping(file_guid, filename)
+            else:
+                file_guid = os.path.splitext(filename)[0]
+
+            guid_filename = f"{file_guid}{file_extension}"
+            file_path = os.path.join(UPLOAD_FOLDER, guid_filename)
+
+            try:
+                # Decode the base64 file data
+                file_data = base64.b64decode(file_data.split(',')[1])
+            except Exception as e:
+                logging.error(f"Error decoding base64 data: {e}")
+                return {"success": False, "error": "Invalid file data"}
+
+            # Write the file
+            mode = 'wb' if is_first_chunk else 'ab'
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, mode) as f:
+                f.write(file_data)
+            
+            logging.info(f"File data written to {file_path}")
+
+            # Only start transcription when file is complete
+            current_size = os.path.getsize(file_path)
+            if current_size >= total_size:
+                # Apply noise reduction before transcription
+                processed_path = self._reduce_noise(file_path)
                 
-            return result
+                # Start transcription with processed file and specified model
+                self.transcription_manager.start_transcription(
+                    processed_path, 
+                    file_guid, 
+                    use_diarization,
+                    model_size=model_size
+                )
+                return {
+                    "success": True,
+                    "path": os.path.join('uploaded_videos', guid_filename),
+                    "guid": file_guid,
+                    "original_filename": filename,
+                    "transcriptionStatus": "processing",
+                    "model": model_size
+                }
+
+            # Still receiving file data
+            return {
+                "success": True,
+                "path": os.path.join('uploaded_videos', guid_filename),
+                "guid": file_guid,
+                "original_filename": filename,
+                "transcriptionStatus": "uploading"
+            }
+
         except Exception as e:
             logging.error(f"Error in upload_video_chunk: {str(e)}")
             return {"success": False, "error": str(e)}
@@ -349,28 +448,6 @@ class API:
             print(f"Error getting transcript: {str(e)}")
             logging.error(f"Error getting transcript: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
-
-    def _validate_upload_completion(self, file_path, total_size):
-        """Validate that the upload is complete and file is valid"""
-        try:
-            if not os.path.exists(file_path):
-                return False, "File does not exist"
-            
-            current_size = os.path.getsize(file_path)
-            if current_size < total_size:
-                return False, f"Incomplete upload ({current_size}/{total_size} bytes)"
-            
-            # Basic file integrity check
-            try:
-                with open(file_path, 'rb') as f:
-                    # Read first few bytes to verify file is accessible
-                    f.read(1024)
-                return True, None
-            except Exception as e:
-                return False, f"File integrity check failed: {str(e)}"
-            
-        except Exception as e:
-            return False, f"Validation error: {str(e)}"
 
 def main():
     # Create a webview window

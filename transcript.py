@@ -15,6 +15,7 @@ from tqdm import tqdm
 import torch
 import datetime
 from pathlib import Path
+import whisper
 
 class TranscriptionStatus(Enum):
     PENDING = "pending"
@@ -31,7 +32,8 @@ class TranscriptionResult:
     error: Optional[str] = None
 
 class TranscriptionManager:
-    def __init__(self):
+    def __init__(self, model_size="base"):
+        self.model_size = model_size
         self.transcriptions = {}
         self._load_auth_token()
         self._initialize_models()
@@ -47,32 +49,7 @@ class TranscriptionManager:
         os.makedirs(self.model_dir, exist_ok=True)
 
         # Initialize Whisper model
-        whisper_model = "openai/whisper-tiny"
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            whisper_model, 
-            cache_dir=self.model_dir, 
-            use_auth_token=self.auth_token
-        )
-        tokenizer = AutoTokenizer.from_pretrained(
-            whisper_model, 
-            cache_dir=self.model_dir, 
-            use_auth_token=self.auth_token
-        )
-        feature_extractor = AutoFeatureExtractor.from_pretrained(
-            whisper_model, 
-            cache_dir=self.model_dir, 
-            use_auth_token=self.auth_token
-        )
-
-        self.transcription_pipeline = transformers_pipeline(
-            "automatic-speech-recognition",
-            model=model,
-            tokenizer=tokenizer,
-            feature_extractor=feature_extractor,
-            chunk_length_s=30,
-            return_timestamps=True,
-            framework="pt"
-        )
+        self.whisper_model = whisper.load_model(self.model_size)
 
         # Initialize Diarization pipeline
         self.diarization_pipeline = Pipeline.from_pretrained(
@@ -81,9 +58,16 @@ class TranscriptionManager:
             use_auth_token=self.auth_token,
         )
 
-    def start_transcription(self, video_path: str, guid: str, use_diarization: bool = False) -> None:
-        """Start the transcription process for a video file"""
+    def start_transcription(self, file_path, guid, use_diarization=False, model_size=None):
+        """Start transcription with specified model"""
         try:
+            # Use provided model size or fall back to default
+            model = model_size or self.model_size
+            
+            # Load the specified Whisper model
+            whisper_model = whisper.load_model(model)
+            
+            # Start transcription with the loaded model
             logging.info(f"Initializing transcription for GUID: {guid} with diarization: {use_diarization}")
             
             # Create initial transcription result
@@ -95,7 +79,7 @@ class TranscriptionManager:
             # Start transcription in a separate thread
             thread = threading.Thread(
                 target=self._process_transcription,
-                args=(video_path, guid, use_diarization),
+                args=(file_path, guid, use_diarization, model),
                 name=f"transcription-{guid}"
             )
             thread.daemon = True
@@ -107,7 +91,7 @@ class TranscriptionManager:
             logging.error(f"Error starting transcription: {e}")
             raise
 
-    def _process_transcription(self, video_path: str, guid: str, use_diarization: bool = False):
+    def _process_transcription(self, file_path: str, guid: str, use_diarization: bool = False, model: str = "base"):
         """Process the transcription in a background thread"""
         print(f"\nStarting transcription for GUID: {guid}")
         
@@ -115,166 +99,110 @@ class TranscriptionManager:
             self.transcriptions[guid].status = TranscriptionStatus.PROCESSING
             
             # Convert video to audio if needed
-            audio_path = self._ensure_audio_file(video_path, guid)
+            audio_path = self._ensure_audio_file(file_path, guid)
             
             try:
-                print("Loading audio file...")
-                audio, sample_rate = torchaudio.load(audio_path)
+                # Use Whisper directly for transcription
+                print("Starting Whisper transcription...")
+                result = self.whisper_model.transcribe(
+                    audio_path,
+                    language="en",
+                    task="transcribe",
+                    verbose=True
+                )
                 
-                # Convert stereo to mono if necessary
-                if audio.shape[0] > 1:
-                    print("Converting stereo to mono...")
-                    audio = torch.mean(audio, dim=0, keepdim=True)
+                # Format the results
+                transcribed_segments = []
+                for segment in result["segments"]:
+                    transcribed_segments.append({
+                        'text': segment['text'],
+                        'timestamp': [segment['start'], segment['end']]
+                    })
+
+                # Create full transcript
+                full_transcript = {
+                    'text': result['text'],
+                    'segments': transcribed_segments
+                }
+
+                # Save initial transcript
+                transcript_dir = os.path.join(os.path.dirname(file_path), 'transcripts')
+                os.makedirs(transcript_dir, exist_ok=True)
+                transcript_path = os.path.join(transcript_dir, f"{guid}_transcript.json")
                 
-            except Exception as e:
-                raise Exception(f"Failed to load audio file: {str(e)}")
-
-            # Process in chunks
-            chunk_duration = 30  # seconds
-            total_duration = audio.shape[1] / sample_rate
-            num_chunks = int(np.ceil(audio.shape[1] / (chunk_duration * sample_rate)))
-            
-            print(f"Processing {num_chunks} chunks...")
-            transcribed_segments = []
-            
-            for i in range(num_chunks):
-                progress = (i + 1) / num_chunks * 100
-                print(f"Transcription progress: {progress:.1f}%")
+                transcript_data = {
+                    'guid': guid,
+                    'full_transcript': full_transcript['text'],
+                    'segments': full_transcript['segments'],
+                    'timestamp': str(datetime.datetime.now()),
+                    'status': TranscriptionStatus.COMPLETED.value
+                }
                 
-                start_sample = i * chunk_duration * sample_rate
-                end_sample = min((i + 1) * chunk_duration * sample_rate, audio.shape[1])
-                audio_chunk = audio[:, start_sample:end_sample].squeeze().numpy()
-                
-                # Get transcription with timestamps
-                try:
-                    result = self.transcription_pipeline(
-                        audio_chunk,
-                        return_timestamps=True,
-                    )
-                    
-                    # Handle chunks and timestamps safely
-                    chunk_start_time = start_sample / sample_rate
-                    
-                    # Ensure we have chunks in the result
-                    if 'chunks' in result:
-                        for chunk in result['chunks']:
-                            # Validate timestamp format
-                            if isinstance(chunk.get('timestamp'), (list, tuple)) and len(chunk['timestamp']) == 2:
-                                start_time, end_time = chunk['timestamp']
-                                
-                                # Handle None or invalid timestamps
-                                if start_time is not None and end_time is not None:
-                                    segment = {
-                                        'text': chunk['text'],
-                                        'timestamp': [
-                                            chunk_start_time + float(start_time),
-                                            chunk_start_time + float(end_time)
-                                        ]
-                                    }
-                                    transcribed_segments.append(segment)
-                                else:
-                                    # If timestamps are invalid, estimate them based on chunk position
-                                    segment = {
-                                        'text': chunk['text'],
-                                        'timestamp': [
-                                            chunk_start_time,
-                                            chunk_start_time + (end_sample - start_sample) / sample_rate
-                                        ]
-                                    }
-                                    transcribed_segments.append(segment)
-                    else:
-                        # If no chunks with timestamps, create a single segment for this chunk
-                        segment = {
-                            'text': result['text'],
-                            'timestamp': [
-                                chunk_start_time,
-                                chunk_start_time + (end_sample - start_sample) / sample_rate
-                            ]
-                        }
-                        transcribed_segments.append(segment)
-
-                except Exception as chunk_error:
-                    logging.error(f"Error processing chunk {i}: {str(chunk_error)}")
-                    # Continue with next chunk instead of failing completely
-                    continue
-
-            # Create full transcript
-            full_transcript = {
-                'text': ' '.join(segment['text'] for segment in transcribed_segments),
-                'segments': transcribed_segments
-            }
-
-            # Save initial transcript
-            transcript_dir = os.path.join(os.path.dirname(video_path), 'transcripts')
-            os.makedirs(transcript_dir, exist_ok=True)
-            transcript_path = os.path.join(transcript_dir, f"{guid}_transcript.json")
-            
-            transcript_data = {
-                'guid': guid,
-                'full_transcript': full_transcript['text'],
-                'segments': full_transcript['segments'],
-                'timestamp': str(datetime.datetime.now()),
-                'status': TranscriptionStatus.COMPLETED.value
-            }
-            
-            # After transcription is complete, process diarization if requested
-            if use_diarization:
-                try:
-                    print("\nStarting diarization process...")
-                    # Run diarization
-                    with ProgressHook() as hook:
-                        diarization = self.diarization_pipeline(audio_path, hook=hook)
-                    
-                    # Convert diarization results to segments
-                    diarized_segments = []
-                    for turn, _, speaker in diarization.itertracks(yield_label=True):
-                        segment = {
-                            "start": turn.start,
-                            "end": turn.end,
-                            "speaker": speaker,
-                            "text": ""  # Will be filled with transcribed text
-                        }
-                        diarized_segments.append(segment)
-                    
-                    # Align transcribed text with diarization segments
-                    for segment in diarized_segments:
-                        segment_start = segment["start"]
-                        segment_end = segment["end"]
+                # After transcription is complete, process diarization if requested
+                if use_diarization:
+                    try:
+                        print("\nStarting diarization process...")
+                        # Run diarization
+                        with ProgressHook() as hook:
+                            diarization = self.diarization_pipeline(audio_path, hook=hook)
                         
-                        # Find transcribed text that falls within this segment's time range
-                        segment_text = []
-                        for trans_segment in transcribed_segments:
-                            trans_start = trans_segment["timestamp"][0]
-                            trans_end = trans_segment["timestamp"][1]
+                        # Convert diarization results to segments
+                        diarized_segments = []
+                        for turn, _, speaker in diarization.itertracks(yield_label=True):
+                            segment = {
+                                "start": turn.start,
+                                "end": turn.end,
+                                "speaker": speaker,
+                                "text": ""  # Will be filled with transcribed text
+                            }
+                            diarized_segments.append(segment)
+                        
+                        # Align transcribed text with diarization segments
+                        for segment in diarized_segments:
+                            segment_start = segment["start"]
+                            segment_end = segment["end"]
                             
-                            # Check for overlap
-                            if (trans_start <= segment_end and trans_end >= segment_start):
-                                segment_text.append(trans_segment["text"])
+                            # Find transcribed text that falls within this segment's time range
+                            segment_text = []
+                            for trans_segment in transcribed_segments:
+                                trans_start = trans_segment["timestamp"][0]
+                                trans_end = trans_segment["timestamp"][1]
+                                
+                                # Check for overlap
+                                if (trans_start <= segment_end and trans_end >= segment_start):
+                                    segment_text.append(trans_segment["text"])
                         
-                        segment["text"] = " ".join(segment_text)
+                            segment["text"] = " ".join(segment_text)
+                        
+                        # Add diarized segments to transcript data
+                        transcript_data['diarized_segments'] = diarized_segments
+                        print("Diarization completed successfully")
                     
-                    # Add diarized segments to transcript data
-                    transcript_data['diarized_segments'] = diarized_segments
-                    print("Diarization completed successfully")
+                    except Exception as e:
+                        print(f"Error during diarization: {str(e)}")
+                        logging.error(f"Diarization failed: {str(e)}")
+                        # Continue with saving the transcript even if diarization fails
                 
-                except Exception as e:
-                    print(f"Error during diarization: {str(e)}")
-                    logging.error(f"Diarization failed: {str(e)}")
-                    # Continue with saving the transcript even if diarization fails
-            
-            # Save the final transcript
-            print(f"Saving transcript to: {transcript_path}")
-            with open(transcript_path, 'w', encoding='utf-8') as f:
-                json.dump(transcript_data, f, ensure_ascii=False, indent=2)
+                # Save the final transcript
+                print(f"Saving transcript to: {transcript_path}")
+                with open(transcript_path, 'w', encoding='utf-8') as f:
+                    json.dump(transcript_data, f, ensure_ascii=False, indent=2)
 
-            # Update transcription result
-            self.transcriptions[guid].status = TranscriptionStatus.COMPLETED
-            self.transcriptions[guid].full_transcript = full_transcript['text']
-            self.transcriptions[guid].segments = full_transcript['segments']
-            if use_diarization and 'diarized_segments' in transcript_data:
-                self.transcriptions[guid].diarized_segments = transcript_data['diarized_segments']
-            
-            print(f"\nTranscription and processing completed for GUID: {guid}")
+                # Update transcription result
+                self.transcriptions[guid].status = TranscriptionStatus.COMPLETED
+                self.transcriptions[guid].full_transcript = full_transcript['text']
+                self.transcriptions[guid].segments = full_transcript['segments']
+                if use_diarization and 'diarized_segments' in transcript_data:
+                    self.transcriptions[guid].diarized_segments = transcript_data['diarized_segments']
+                
+                print(f"\nTranscription and processing completed for GUID: {guid}")
+
+            except Exception as e:
+                error_msg = f"Transcription failed for GUID {guid}: {str(e)}"
+                print(f"\nError: {error_msg}")
+                logging.error(error_msg)
+                self.transcriptions[guid].status = TranscriptionStatus.FAILED
+                self.transcriptions[guid].error = str(e)
 
         except Exception as e:
             error_msg = f"Transcription failed for GUID {guid}: {str(e)}"
@@ -283,18 +211,18 @@ class TranscriptionManager:
             self.transcriptions[guid].status = TranscriptionStatus.FAILED
             self.transcriptions[guid].error = str(e)
 
-    def _ensure_audio_file(self, video_path: str, guid: str) -> str:
+    def _ensure_audio_file(self, file_path: str, guid: str) -> str:
         """Convert video to audio if needed"""
         try:
             import moviepy.editor as mp
             
             # Generate output path using GUID
-            audio_path = os.path.join(os.path.dirname(video_path), f"{guid}.wav")
+            audio_path = os.path.join(os.path.dirname(file_path), f"{guid}.wav")
             
             # Convert only if audio file doesn't exist
             if not os.path.exists(audio_path):
                 logging.info(f"Converting video to audio for GUID: {guid}")
-                video = mp.VideoFileClip(video_path)
+                video = mp.VideoFileClip(file_path)
                 video.audio.write_audiofile(audio_path)
                 video.close()
                 logging.info(f"Audio conversion completed: {audio_path}")

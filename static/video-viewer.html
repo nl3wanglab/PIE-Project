@@ -100,6 +100,22 @@
             right: 20px;
             z-index: 1000;
         }
+
+        .heart-rate-input-container {
+            margin-top: 20px;
+        }
+
+        .input-header {
+            margin-bottom: 10px;
+        }
+
+        .data-preview {
+            overflow-y: auto;
+        }
+
+        .table-sm {
+            font-size: 0.8em;
+        }
     </style>
 </head>
 <body>
@@ -114,70 +130,93 @@
                     Your browser does not support the video tag.
                 </video>
             </div>
-            <div class="transcript-container">
+            <div class="analysis-container">
+                <h4>Analysis</h4>
+                <ul class="nav nav-tabs" id="analysisTabs">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-bs-toggle="tab" href="#scoring">Scoring</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#analytics">Analytics</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#notes">Notes</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#summary">Summary</a>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="scoring">
+                        <div class="scoring-section">
+                            <h5>Performance Metrics</h5>
+                            <!-- Scoring content will go here -->
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="analytics">
+                        <div class="analytics-section">
+                            <div class="chart-container">
+                                <canvas id="speakingTimeChart"></canvas>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="wordFrequencyChart"></canvas>
+                            </div>
+                            <div class="chart-row">
+                                <div class="chart-container">
+                                    <canvas id="heartRateChart"></canvas>
+                                </div>
+                                <div class="heart-rate-input-container">
+                                    <div class="input-header">
+                                        <h5>Heart Rate Data</h5>
+                                        <input type="file" id="heartRateFile" accept=".csv,.xlsx,.xls" class="form-control mb-2">
+                                    </div>
+                                    <div class="data-preview">
+                                        <table class="table table-sm table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Time</th>
+                                                    <th>BPM</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="heartRateTableBody">
+                                                <!-- Data will be populated here -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="chart-row">
+                                <div class="chart-container half-width">
+                                    <canvas id="emotionsChart"></canvas>
+                                </div>
+                                <div class="chart-container half-width">
+                                    <canvas id="emotionsPieChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="notes">
+                        <div class="p-3">
+                            <textarea class="form-control" rows="10" placeholder="Add your notes here..."></textarea>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="summary">
+                        <div class="p-3">
+                            <!-- Summary content will go here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="right-panel">
+            <div class="transcript-section">
                 <h4>Transcript</h4>
                 <div class="btn-group mb-3" role="group">
                     <button type="button" class="btn btn-outline-primary" id="diarizedBtn">Diarized</button>
                     <button type="button" class="btn btn-outline-primary active" id="fullBtn">Full Text</button>
                 </div>
                 <div id="transcriptContent"></div>
-            </div>
-        </div>
-        
-        <div class="right-panel">
-            <h4>Analysis</h4>
-            <ul class="nav nav-tabs" id="analysisTabs">
-                <li class="nav-item">
-                    <a class="nav-link active" data-bs-toggle="tab" href="#scoring">Scoring</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" data-bs-toggle="tab" href="#analytics">Analytics</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" data-bs-toggle="tab" href="#notes">Notes</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" data-bs-toggle="tab" href="#summary">Summary</a>
-                </li>
-            </ul>
-            <div class="tab-content">
-                <div class="tab-pane fade show active" id="scoring">
-                    <div class="scoring-section">
-                        <h5>Performance Metrics</h5>
-                        <!-- Scoring content will go here -->
-                    </div>
-                </div>
-                <div class="tab-pane fade" id="analytics">
-                    <div class="analytics-section">
-                        <div class="chart-container">
-                            <canvas id="speakingTimeChart"></canvas>
-                        </div>
-                        <div class="chart-container">
-                            <canvas id="wordFrequencyChart"></canvas>
-                        </div>
-                        <div class="chart-container">
-                            <canvas id="heartRateChart"></canvas>
-                        </div>
-                        <div class="chart-row">
-                            <div class="chart-container half-width">
-                                <canvas id="emotionsChart"></canvas>
-                            </div>
-                            <div class="chart-container half-width">
-                                <canvas id="emotionsPieChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="tab-pane fade" id="notes">
-                    <div class="p-3">
-                        <textarea class="form-control" rows="10" placeholder="Add your notes here..."></textarea>
-                    </div>
-                </div>
-                <div class="tab-pane fade" id="summary">
-                    <div class="p-3">
-                        <!-- Summary content will go here -->
-                    </div>
-                </div>
             </div>
         </div>
     </div>
