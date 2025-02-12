@@ -11,8 +11,11 @@
     <div class="container mt-5">
         <h1 class="text-center mb-4">Video Dashboard</h1>
         
+        <!-- Video cards container -->
         <div class="row" id="video-cards">
             <!-- Video cards will be dynamically inserted here -->
+            
+            <!-- Add Video Card - This must be the last child -->
             <div class="col-md-4 mb-4">
                 <div class="card add-video-card" data-toggle="modal" data-target="#settingsModal">
                     <div class="card-body text-center">
@@ -21,61 +24,54 @@
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Settings Modal -->
-    <div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="settingsModalLabel">Add Video Settings</h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <form id="videoSettingsForm">
-                        <div class="form-group">
-                            <label for="videoFile">Select Video File</label>
-                            <input type="file" class="form-control-file" id="videoFile" accept="video/*" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="whisperModel">Select Whisper Model</label>
-                            <select class="form-control" id="whisperModel">
-                                <option value="tiny">Whisper Tiny (Fastest)</option>
-                                <option value="base">Whisper Base</option>
-                                <option value="small">Whisper Small</option>
-                                <option value="medium">Whisper Medium</option>
-                                <option value="large">Whisper Large (Most Accurate)</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <div class="custom-control custom-checkbox">
-                                <input type="checkbox" class="custom-control-input" id="useDiarization">
-                                <label class="custom-control-label" for="useDiarization">
-                                    Enable Speaker Diarization
-                                    <small class="text-muted d-block">
-                                        Identifies different speakers in the video (takes longer to process)
-                                    </small>
-                                </label>
+        <!-- Settings Modal -->
+        <div class="modal fade" id="settingsModal" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Upload Video</h5>
+                        <button type="button" class="close" data-dismiss="modal">
+                            <span>&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="videoSettingsForm">
+                            <div class="form-group">
+                                <label for="videoFile">Choose Video File</label>
+                                <input type="file" class="form-control-file" id="videoFile" accept="video/*" required>
                             </div>
-                        </div>
-
-                        <div id="uploadStatus"></div>
-                        <button type="submit" class="btn btn-primary">Upload</button>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                            <div class="form-group">
+                                <label for="whisperModel">Whisper Model</label>
+                                <select class="form-control" id="whisperModel">
+                                    <option value="tiny">Tiny (Fastest)</option>
+                                    <option value="base" selected>Base (Recommended)</option>
+                                    <option value="small">Small</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="large">Large (Most Accurate)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <div class="custom-control custom-switch">
+                                    <input type="checkbox" class="custom-control-input" id="useDiarization">
+                                    <label class="custom-control-label" for="useDiarization">Enable Speaker Diarization</label>
+                                </div>
+                            </div>
+                            <div id="uploadStatus"></div>
+                            <button type="submit" class="btn btn-primary">Upload</button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <!-- Message container for notifications -->
+    <div id="message-container"></div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="script.js"></script>
 </body>
