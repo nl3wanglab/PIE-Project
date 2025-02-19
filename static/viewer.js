@@ -1,13 +1,41 @@
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    // Get URL parameters including guid
     const urlParams = new URLSearchParams(window.location.search);
     const videoPath = urlParams.get('video');
     const guid = urlParams.get('guid');
+    
+    // Store guid in window object so it's accessible everywhere
+    window.currentGuid = guid;
     
     // Set up video player
     const videoPlayer = document.getElementById('videoPlayer');
     if (videoPath) {
         videoPlayer.src = videoPath;
     }
+
+    // Initialize all components after pywebview is ready
+    async function initializeComponents() {
+        if (window.pywebview && window.pywebview.api) {
+            if (guid) {
+                // Initialize HR data handling
+                await initializeHRDataHandling(guid);
+                
+                // Initialize transcript
+                switchTranscriptView('full');
+                
+                // Initialize other components...
+            } else {
+                console.error('No GUID provided in URL parameters');
+                showMessage('Error: No video ID found', 'error');
+            }
+        } else {
+            // If pywebview isn't ready yet, try again in 100ms
+            setTimeout(initializeComponents, 100);
+        }
+    }
+
+    // Start initialization
+    initializeComponents();
 
     // Handle transcript view switching
     const diarizedBtn = document.getElementById('diarizedBtn');
@@ -733,4 +761,226 @@ updateCharts = function(transcriptData) {
         window.heartRateChart.data.datasets[0].data = window.heartRateData.map(d => d.bpm);
         window.heartRateChart.update();
     }
-}; 
+};
+
+// Update the initializeHRDataHandling function
+async function initializeHRDataHandling(guid) {
+    const hrDataUploadForm = document.getElementById('hrDataUploadForm');
+    const hrDataStatus = document.getElementById('hrDataStatus');
+    const deleteHRDataBtn = document.getElementById('deleteHRData');
+    
+    if (!guid) {
+        hrDataStatus.innerHTML = `
+            <div class="alert alert-danger">
+                Error: No video ID found. Please return to the main page and try again.
+            </div>
+        `;
+        return;
+    }
+    
+    // Try to load existing HR data
+    try {
+        const response = await window.pywebview.api.get_hr_data(guid);
+        if (response.success) {
+            updateHRDisplay(response.data);
+            updateHRChart(response.data);
+            if (deleteHRDataBtn) {
+                deleteHRDataBtn.disabled = false;
+            }
+        } else {
+            console.log('No HR data available');
+            showHRUploadForm();
+        }
+    } catch (error) {
+        console.error('Error loading HR data:', error);
+        showHRUploadForm();
+    }
+    
+    // Add delete button handler
+    deleteHRDataBtn.addEventListener('click', async () => {
+        if (confirm('Are you sure you want to delete the HR data?')) {
+            try {
+                const response = await window.pywebview.api.delete_hr_data(guid);
+                if (response.success) {
+                    showMessage('HR data deleted successfully', 'success');
+                    clearHRDisplay();
+                    showHRUploadForm();
+                } else {
+                    showMessage(`Delete failed: ${response.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Delete error: ${error.message}`, 'error');
+            }
+        }
+    });
+    
+    // Add column selection handler
+    const firstColumnSelect = document.getElementById('firstColumnType');
+    const secondColumnSelect = document.getElementById('secondColumnType');
+
+    firstColumnSelect.addEventListener('change', function() {
+        // Update second column to opposite selection
+        secondColumnSelect.value = this.value === 'parent' ? 'child' : 'parent';
+    });
+
+    // File upload handler
+    hrDataUploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const fileInput = document.getElementById('hrDataFile');
+        const file = fileInput.files[0];
+        
+        if (!file) {
+            showMessage('Please select a CSV file', 'error');
+            return;
+        }
+        
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            showMessage('Please upload a CSV file', 'error');
+            return;
+        }
+        
+        try {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const csvData = e.target.result;
+                const lines = csvData.split('\n');
+                
+                if (lines.length < 2) {
+                    showMessage('CSV file must contain data rows', 'error');
+                    return;
+                }
+
+                // Get column configuration
+                const firstColType = document.getElementById('firstColumnType').value;
+                const secondColType = document.getElementById('secondColumnType').value;
+
+                // Create header line based on column configuration
+                const headerLine = `${firstColType},${secondColType}\n`;
+                
+                // Process the data lines (skip header if it exists)
+                const dataLines = lines.filter(line => line.trim().length > 0);
+                const processedData = dataLines.slice(1).join('\n');
+                
+                // Combine header and processed data
+                const finalCsvData = headerLine + processedData;
+
+                // Send to backend
+                const response = await window.pywebview.api.upload_hr_data(finalCsvData, guid);
+                if (response.success) {
+                    showMessage('HR data uploaded successfully', 'success');
+                    
+                    // Process the data for display
+                    const displayData = dataLines.slice(1).map(line => {
+                        const [col1, col2] = line.split(',').map(val => parseFloat(val.trim()));
+                        return {
+                            [firstColType]: col1,
+                            [secondColType]: col2
+                        };
+                    });
+
+                    updateHRDisplay(displayData);
+                    updateHRChart(displayData);
+                } else {
+                    showMessage(`Upload failed: ${response.error}`, 'error');
+                }
+            };
+            reader.readAsText(file);
+        } catch (error) {
+            showMessage(`Upload error: ${error.message}`, 'error');
+        }
+    });
+}
+
+function updateHRDisplay(data) {
+    const tableBody = document.getElementById('heartRateTableBody');
+    const deleteHRDataBtn = document.getElementById('deleteHRData');
+    
+    if (!tableBody) return;
+    
+    // Enable delete button when data is present
+    if (deleteHRDataBtn) {
+        deleteHRDataBtn.disabled = false;
+    }
+    
+    tableBody.innerHTML = data.map((row, index) => `
+        <tr>
+            <td>${index + 1}</td>
+            <td>${row.parent}</td>
+            <td>${row.child}</td>
+        </tr>
+    `).join('');
+}
+
+function updateHRChart(data) {
+    if (window.heartRateChart) {
+        window.heartRateChart.data.datasets = [{
+            label: 'Parent HR',
+            data: data.map(row => row.parent),
+            borderColor: 'rgb(255, 99, 132)',
+            tension: 0.1
+        }, {
+            label: 'Child HR',
+            data: data.map(row => row.child),
+            borderColor: 'rgb(75, 192, 192)',
+            tension: 0.1
+        }];
+        window.heartRateChart.update();
+    }
+}
+
+function showHRUploadForm() {
+    const hrDataStatus = document.getElementById('hrDataStatus');
+    const deleteHRDataBtn = document.getElementById('deleteHRData');
+    
+    if (hrDataStatus) {
+        hrDataStatus.innerHTML = `
+            <div class="alert alert-info">
+                No HR data available. Please upload a CSV file with child and parent heart rate data.
+            </div>
+        `;
+    }
+    
+    // Disable delete button when no data is present
+    if (deleteHRDataBtn) {
+        deleteHRDataBtn.disabled = true;
+    }
+}
+
+// Add a showMessage function if you don't have one
+function showMessage(message, type = 'info') {
+    const hrDataStatus = document.getElementById('hrDataStatus');
+    if (hrDataStatus) {
+        hrDataStatus.innerHTML = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+    }
+}
+
+// Add function to clear HR display
+function clearHRDisplay() {
+    // Clear table
+    const tableBody = document.getElementById('heartRateTableBody');
+    if (tableBody) {
+        tableBody.innerHTML = '';
+    }
+    
+    // Clear chart
+    if (window.heartRateChart) {
+        window.heartRateChart.data.datasets = [{
+            label: 'Parent HR',
+            data: [],
+            borderColor: 'rgb(255, 99, 132)',
+            tension: 0.1
+        }, {
+            label: 'Child HR',
+            data: [],
+            borderColor: 'rgb(75, 192, 192)',
+            tension: 0.1
+        }];
+        window.heartRateChart.update();
+    }
+} 

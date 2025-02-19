@@ -11,6 +11,8 @@ import noisereduce as nr
 import soundfile as sf
 import numpy as np
 from pydub import AudioSegment
+import pandas as pd
+import csv
 
 # Configure logging
 logging.basicConfig(
@@ -488,6 +490,77 @@ class API:
             return {"success": True, "files": {}}
         except Exception as e:
             logging.error(f"Error getting mapped files: {e}")
+            return {"success": False, "error": str(e)}
+
+    def upload_hr_data(self, file_data, guid):
+        """Handle HR data file upload"""
+        try:
+            logging.info(f"Processing HR data upload for GUID: {guid}")
+            
+            # Create HR data directory if it doesn't exist
+            hr_data_dir = os.path.join(UPLOAD_FOLDER, 'hr_data')
+            os.makedirs(hr_data_dir, exist_ok=True)
+            
+            # Save the HR data file
+            hr_file_path = os.path.join(hr_data_dir, f"{guid}_hr.csv")
+            
+            try:
+                # Parse the CSV data directly
+                lines = file_data.split('\n')
+                if len(lines) < 2:  # Need at least header and one data row
+                    return {"success": False, "error": "CSV file must contain data rows"}
+                
+                # Create DataFrame from the processed data
+                df = pd.DataFrame([line.split(',') for line in lines[1:]], columns=['parent', 'child'])
+                
+                # Convert to numeric, replacing any invalid values with NaN
+                df['parent'] = pd.to_numeric(df['parent'], errors='coerce')
+                df['child'] = pd.to_numeric(df['child'], errors='coerce')
+                
+                # Remove any rows with NaN values
+                df = df.dropna()
+                
+                if df.empty:
+                    return {"success": False, "error": "No valid numeric data found in CSV"}
+                
+                # Save the processed data
+                df.to_csv(hr_file_path, index=False)
+                
+                logging.info(f"HR data saved to {hr_file_path}")
+                return {"success": True, "message": "HR data uploaded successfully"}
+                
+            except Exception as e:
+                logging.error(f"Error processing HR data: {e}")
+                return {"success": False, "error": str(e)}
+                
+        except Exception as e:
+            logging.error(f"Error in upload_hr_data: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def get_hr_data(self, guid):
+        """Get HR data for a video using GUID"""
+        try:
+            hr_file_path = os.path.join(UPLOAD_FOLDER, 'hr_data', f"{guid}_hr.csv")
+            if os.path.exists(hr_file_path):
+                df = pd.read_csv(hr_file_path)
+                data = df.to_dict('records')
+                return {"success": True, "data": data}
+            return {"success": False, "error": "HR data not found"}
+        except Exception as e:
+            logging.error(f"Error getting HR data: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def delete_hr_data(self, guid):
+        """Delete HR data for a video using GUID"""
+        try:
+            hr_file_path = os.path.join(UPLOAD_FOLDER, 'hr_data', f"{guid}_hr.csv")
+            if os.path.exists(hr_file_path):
+                os.remove(hr_file_path)
+                logging.info(f"Deleted HR data file: {hr_file_path}")
+                return {"success": True, "message": "HR data deleted successfully"}
+            return {"success": False, "error": "HR data not found"}
+        except Exception as e:
+            logging.error(f"Error deleting HR data: {str(e)}")
             return {"success": False, "error": str(e)}
 
 def main():

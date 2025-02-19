@@ -162,35 +162,61 @@
                                 <canvas id="wordFrequencyChart"></canvas>
                             </div>
                             <div class="chart-row">
-                                <div class="chart-container">
-                                    <canvas id="heartRateChart"></canvas>
-                                </div>
-                                <div class="heart-rate-input-container">
-                                    <div class="input-header">
-                                        <h5>Heart Rate Data</h5>
-                                        <input type="file" id="heartRateFile" accept=".csv,.xlsx,.xls" class="form-control mb-2">
-                                    </div>
-                                    <div class="data-preview">
-                                        <table class="table table-sm table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th>Time</th>
-                                                    <th>BPM</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="heartRateTableBody">
-                                                <!-- Data will be populated here -->
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="chart-row">
                                 <div class="chart-container half-width">
                                     <canvas id="emotionsChart"></canvas>
                                 </div>
                                 <div class="chart-container half-width">
                                     <canvas id="emotionsPieChart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <div class="hr-data-section mb-4 mt-5">
+                                <h4>Heart Rate Data</h4>
+                                <div id="hrDataStatus"></div>
+                                
+                                <form id="hrDataUploadForm" class="mb-3">
+                                    <div class="input-group mb-2">
+                                        <input type="file" class="form-control" id="hrDataFile" accept=".csv">
+                                        <button type="submit" class="btn btn-primary">Upload HR Data</button>
+                                        <button type="button" id="deleteHRData" class="btn btn-danger">Delete HR Data</button>
+                                    </div>
+                                    <div class="row mb-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label">First Column is:</label>
+                                            <select class="form-select" id="firstColumnType">
+                                                <option value="parent">Parent HR</option>
+                                                <option value="child">Child HR</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Second Column is:</label>
+                                            <select class="form-select" id="secondColumnType" disabled>
+                                                <option value="child">Child HR</option>
+                                                <option value="parent">Parent HR</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <small class="form-text text-muted">
+                                        Please upload a CSV file with two columns of heart rate data
+                                    </small>
+                                </form>
+                                
+                                <div class="chart-container">
+                                    <canvas id="heartRateChart"></canvas>
+                                </div>
+                                
+                                <div class="table-responsive mt-3">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Child HR</th>
+                                                <th>Parent HR</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="heartRateTableBody">
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </div>
