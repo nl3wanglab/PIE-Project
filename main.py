@@ -333,18 +333,46 @@ class API:
             logging.error(f"Error reading diarized transcript: {e}")
             return {"success": False, "error": str(e)}
 
-    def delete_video(self, filename):
+    def delete_video(self, guid):
+        """Delete video and associated files by GUID"""
         try:
-            file_path = os.path.join(UPLOAD_FOLDER, filename)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                logging.info(f"Successfully deleted video: {filename}")
-                return {"success": True}
+            # Find the file extension from the mapping
+            mapping_file = os.path.join(UPLOAD_FOLDER, 'filename_mapping.json')
+            if os.path.exists(mapping_file):
+                with open(mapping_file, 'r') as f:
+                    mapping = json.load(f)
+                
+                if guid in mapping:
+                    # Get original filename to determine extension
+                    original_filename = mapping[guid]['original_filename']
+                    extension = os.path.splitext(original_filename)[1]
+                    
+                    # Delete video file
+                    video_path = os.path.join(UPLOAD_FOLDER, f"{guid}{extension}")
+                    if os.path.exists(video_path):
+                        os.remove(video_path)
+                    
+                    # Delete transcript file if it exists
+                    transcript_path = os.path.join(UPLOAD_FOLDER, "transcripts", f"{guid}_transcript.json")
+                    if os.path.exists(transcript_path):
+                        os.remove(transcript_path)
+                    
+                    # Remove from mapping
+                    del mapping[guid]
+                    with open(mapping_file, 'w') as f:
+                        json.dump(mapping, f, indent=2)
+                    
+                    logging.info(f"Successfully deleted video and associated files for GUID: {guid}")
+                    return {"success": True}
+                else:
+                    logging.warning(f"GUID not found in mapping: {guid}")
+                    return {"success": False, "error": "Video not found"}
             else:
-                logging.warning(f"File not found for deletion: {filename}")
-                return {"success": False, "error": "File not found"}
+                logging.error("Filename mapping file not found")
+                return {"success": False, "error": "Mapping file not found"}
+            
         except Exception as e:
-            logging.error(f"Error deleting video {filename}: {e}")
+            logging.error(f"Error deleting video {guid}: {e}")
             return {"success": False, "error": str(e)}
 
     def get_transcription_status(self, video_name):
@@ -447,6 +475,19 @@ class API:
         except Exception as e:
             print(f"Error getting transcript: {str(e)}")
             logging.error(f"Error getting transcript: {str(e)}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    def get_all_mapped_files(self):
+        """Get all mapped files from the filename mapping"""
+        try:
+            mapping_file = os.path.join(UPLOAD_FOLDER, 'filename_mapping.json')
+            if os.path.exists(mapping_file):
+                with open(mapping_file, 'r') as f:
+                    mapping = json.load(f)
+                return {"success": True, "files": mapping}
+            return {"success": True, "files": {}}
+        except Exception as e:
+            logging.error(f"Error getting mapped files: {e}")
             return {"success": False, "error": str(e)}
 
 def main():

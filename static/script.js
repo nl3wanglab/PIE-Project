@@ -57,27 +57,139 @@ function deleteVideoCard(button) {
     localStorage.setItem('videos', JSON.stringify(videos));
 }
 
-function loadVideos() {
-    const videos = JSON.parse(localStorage.getItem('videos')) || [];
-    const videoCards = document.getElementById('video-cards');
-    videos.forEach(video => {
-        const videoCard = document.createElement('div');
-        videoCard.className = 'col-md-4 mb-4';
-        videoCard.innerHTML = `
-            <div class="card">
-                <div class="card-body text-center">
-                    <h5 class="card-title">${video.name}</h5>
-                    <p>Added on ${video.date}</p>
-                    <button class="btn btn-danger mt-2" onclick="deleteVideoCard(this)">Delete</button>
+async function loadVideos() {
+    console.log("Loading videos...");
+    try {
+        // Ensure pywebview is available
+        if (!window.pywebview || !window.pywebview.api) {
+            console.error('Pywebview API not available');
+            return;
+        }
+
+        // Get mapped files from the backend
+        const response = await window.pywebview.api.get_all_mapped_files();
+        console.log("Mapped files response:", response);
+        
+        if (!response.success) {
+            console.error('Error loading videos:', response.error);
+            return;
+        }
+
+        if (!response.files || Object.keys(response.files).length === 0) {
+            console.log("No mapped files found");
+            return;
+        }
+
+        const mappedFiles = response.files;
+        const videoCards = document.getElementById('video-cards');
+        
+        if (!videoCards) {
+            console.error('Video cards container not found');
+            return;
+        }
+
+        // Sort files by timestamp (newest first)
+        const sortedFiles = Object.entries(mappedFiles).sort((a, b) => {
+            return new Date(b[1].timestamp) - new Date(a[1].timestamp);
+        });
+
+        console.log("Sorted files:", sortedFiles);
+
+        // Clear existing cards except the "Add Video" card
+        const addVideoCard = videoCards.querySelector('.add-video-card').parentElement;
+        videoCards.innerHTML = '';
+        videoCards.appendChild(addVideoCard);
+
+        for (const [guid, fileInfo] of sortedFiles) {
+            console.log(`Processing file: ${fileInfo.original_filename} (${guid})`);
+            
+            const { original_filename, timestamp } = fileInfo;
+            const fileExtension = original_filename.split('.').pop().toLowerCase();
+            // Fix the media URL path to be relative to the static directory
+            const mediaUrl = `uploaded_videos/${guid}.${fileExtension}`;
+
+            // Create card HTML
+            const loadingCard = document.createElement('div');
+            loadingCard.className = 'col-md-4 mb-4';
+            loadingCard.innerHTML = `
+                <div class="card" data-video="${original_filename}" data-guid="${guid}">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">${original_filename}</h5>
+                        <div class="video-thumbnail mb-3" data-guid="${guid}">
+                            <video preload="metadata" muted>
+                                <source src="${mediaUrl}" type="video/mp4">
+                            </video>
+                            <div class="play-icon">▶</div>
+                        </div>
+                        <p>Added on ${formatTimestamp(new Date(timestamp))}</p>
+                        <button class="btn btn-primary mt-2 mr-2" onclick="viewEditVideo('${mediaUrl}', '${guid}')">View</button>
+                        <button class="btn btn-danger mt-2" onclick="deleteVideo('${guid}')">Delete</button>
+                        <div class="transcription-status status-checking">
+                            Checking transcription status...
+                        </div>
+                    </div>
                 </div>
-            </div>
-        `;
-        videoCards.insertBefore(videoCard, videoCards.lastElementChild);
-    });
+            `;
+            
+            // Insert before the "Add Video" card
+            videoCards.insertBefore(loadingCard, videoCards.lastElementChild);
+            console.log(`Added card for ${original_filename}`);
+
+            // Set up video thumbnail behavior
+            const videoElement = loadingCard.querySelector('video');
+            const thumbnailContainer = loadingCard.querySelector('.video-thumbnail');
+            
+            if (videoElement) {
+                videoElement.addEventListener('loadedmetadata', function() {
+                    const seekTime = Math.min(1, this.duration * 0.25);
+                    this.currentTime = seekTime;
+                });
+
+                videoElement.addEventListener('error', function(e) {
+                    console.error('Video loading error:', e);
+                    console.error('Video src:', this.src);
+                });
+
+                thumbnailContainer.addEventListener('mouseenter', function() {
+                    videoElement.play().catch(e => console.log('Video play failed:', e));
+                });
+
+                thumbnailContainer.addEventListener('mouseleave', function() {
+                    videoElement.pause();
+                    const seekTime = Math.min(1, videoElement.duration * 0.25);
+                    videoElement.currentTime = seekTime;
+                });
+            }
+
+            // Start checking transcription status
+            const statusInterval = setInterval(() => {
+                checkTranscriptionStatus(original_filename, guid);
+            }, 2000);
+
+            // Store the interval ID in the card's dataset
+            const card = loadingCard.querySelector('.card');
+            if (card) {
+                card.dataset.statusInterval = statusInterval;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading videos:', error);
+    }
 }
 
-// Load videos on page load
-document.addEventListener('DOMContentLoaded', loadVideos);
+// Replace the existing event listeners with a pywebview-specific initialization
+window.addEventListener('pywebviewready', () => {
+    console.log("Pywebview is ready - calling loadVideos");
+    loadVideos();
+});
+
+// Keep the DOMContentLoaded listener as a backup
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOM Content Loaded - checking if pywebview is ready");
+    if (window.pywebview) {
+        loadVideos();
+    }
+});
 
 function updateCardWithMedia(loadingCard, originalFilename, mediaUrl, isVideo, guid) {
     const cardBody = loadingCard.querySelector('.card-body');
@@ -89,11 +201,11 @@ function updateCardWithMedia(loadingCard, originalFilename, mediaUrl, isVideo, g
             </video>
             <div class="play-icon">▶</div>
         </div>
-        <p>Added on ${new Date().toLocaleString()}</p>
+        <p>Added on ${formatTimestamp(new Date())}</p>
         <button class="btn btn-primary mt-2 mr-2" onclick="viewEditVideo('${mediaUrl}', '${guid}')">View</button>
         <button class="btn btn-danger mt-2" onclick="deleteVideo('${guid}')">Delete</button>
-        <div class="transcription-status status-processing">
-            Transcription: Processing
+        <div class="transcription-status status-checking">
+            Checking transcription status...
         </div>
     `;
 
@@ -196,22 +308,33 @@ function handleFileUpload(event) {
     });
 }
 
-function deleteVideo(filename) {
-    if (confirm(`Are you sure you want to delete ${filename}?`)) {
-        window.pywebview.api.delete_video(filename)
+function deleteVideo(guid) {
+    if (confirm(`Are you sure you want to delete this video?`)) {
+        console.log(`Attempting to delete video with GUID: ${guid}`);
+        
+        window.pywebview.api.delete_video(guid)
             .then(response => {
+                console.log('Delete response:', response);
                 if (response.success) {
-                    // Remove the video element and its container if it exists
-                    const videoContainer = document.getElementById(`video-container-${filename}`);
-                    if (videoContainer) {
-                        videoContainer.remove();
+                    // Find and remove the card directly
+                    const card = document.querySelector(`[data-guid="${guid}"]`).closest('.col-md-4');
+                    if (card) {
+                        // Clear any existing intervals
+                        const statusInterval = card.querySelector('.card').dataset.statusInterval;
+                        if (statusInterval) {
+                            clearInterval(parseInt(statusInterval));
+                        }
+                        card.remove();
+                        showMessage('Video deleted successfully', 'success');
+                    } else {
+                        console.error(`Card not found for GUID: ${guid}`);
                     }
-                    showMessage('Video deleted successfully', 'success');
                 } else {
                     showMessage(`Error deleting video: ${response.error}`, 'error');
                 }
             })
             .catch(error => {
+                console.error('Delete error:', error);
                 showMessage(`Error deleting video: ${error}`, 'error');
             });
     }
@@ -267,43 +390,55 @@ function showMessage(message, type = 'info') {
     }, 5000);
 }
 
-// Add this function to check transcription status
+// Update the checkTranscriptionStatus function to handle the status better
 async function checkTranscriptionStatus(filename, guid) {
     try {
         const response = await window.pywebview.api.get_transcription_status(guid);
+        console.log(`Transcription status for ${filename}:`, response);
+        
         if (response.success) {
-            const card = document.querySelector(`[data-video="${filename}"]`);
-            if (card) {
-                const statusElement = card.querySelector('.transcription-status');
-                if (!statusElement) {
-                    return;
-                }
-                
-                const status = response.status;
-                let statusText = '';
-                
-                if (status === 'COMPLETED') {
-                    statusText = 'Transcription Complete ✓';
-                    console.log('Transcription completed for:', guid);
-                    console.log('Transcript:', response.full_transcript);
-                    if (card.dataset.statusInterval) {
-                        clearInterval(parseInt(card.dataset.statusInterval));
-                    }
-                } else if (status === 'FAILED') {
-                    statusText = `Transcription Failed: ${response.error || 'Unknown error'}`;
-                    console.error('Transcription failed:', response.error);
-                    if (card.dataset.statusInterval) {
-                        clearInterval(parseInt(card.dataset.statusInterval));
-                    }
-                } else if (status === 'PROCESSING') {
-                    statusText = 'Transcribing... (This may take a few minutes)';
-                } else {
-                    statusText = `Transcription: ${status}`;
-                }
-                
-                statusElement.textContent = statusText;
-                statusElement.className = `transcription-status status-${status.toLowerCase()}`;
+            const card = document.querySelector(`[data-guid="${guid}"]`);
+            if (!card) {
+                console.log(`Card not found for guid: ${guid}`);
+                return;
             }
+            
+            const statusElement = card.querySelector('.transcription-status');
+            if (!statusElement) {
+                console.log(`Status element not found for guid: ${guid}`);
+                return;
+            }
+            
+            const status = response.status;
+            let statusText = '';
+            let statusClass = '';
+            
+            switch(status) {
+                case 'COMPLETED':
+                    statusText = 'Transcription Complete ✓';
+                    statusClass = 'status-completed';
+                    if (card.dataset.statusInterval) {
+                        clearInterval(parseInt(card.dataset.statusInterval));
+                    }
+                    break;
+                case 'FAILED':
+                    statusText = `Transcription Failed: ${response.error || 'Unknown error'}`;
+                    statusClass = 'status-failed';
+                    if (card.dataset.statusInterval) {
+                        clearInterval(parseInt(card.dataset.statusInterval));
+                    }
+                    break;
+                case 'PROCESSING':
+                    statusText = 'Transcribing... (This may take a few minutes)';
+                    statusClass = 'status-processing';
+                    break;
+                default:
+                    statusText = `Status: ${status}`;
+                    statusClass = 'status-pending';
+            }
+            
+            statusElement.textContent = statusText;
+            statusElement.className = `transcription-status ${statusClass}`;
         }
     } catch (error) {
         console.error('Error checking transcription status:', error);
@@ -546,3 +681,8 @@ function showSettingsModal() {
 document.getElementById('returnButton').addEventListener('click', function() {
     window.history.back(); // Go back to the previous page
 });
+
+// Add this helper function to format the timestamp
+function formatTimestamp(timestamp) {
+    return new Date(timestamp).toLocaleString();
+}

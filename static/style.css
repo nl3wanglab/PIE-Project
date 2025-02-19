@@ -140,6 +140,18 @@ h1 {
     border: 1px solid #f5c6cb;
 }
 
+.status-checking {
+    background-color: #e2e3e5;
+    color: #383d41;
+    border: 1px solid #d6d8db;
+}
+
+.spinner-border {
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-right: 0.5rem;
+}
+
 @keyframes pulse {
     0% { opacity: 1; }
     50% { opacity: 0.6; }
