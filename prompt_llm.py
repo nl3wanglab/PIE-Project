@@ -4,119 +4,173 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from huggingface_hub import login
 
-# Load Hugging Face token from file
-token_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "token.json")
-with open(token_path, 'r') as token_file:
-    auth_token = json.load(token_file)["HUGGING_FACE_TOKEN"]
+def setup_device():
+    """Determine and configure the best available device"""
+    if torch.cuda.is_available():
+        return "cuda"
+    elif torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
-# Log in to Hugging Face (optional but recommended)
-login(auth_token)
+def load_model(model_name, device, auth_token):
+    """Load model with appropriate settings based on device"""
+    print(f"🔹 Loading model: {model_name} on {device}")
+    
+    # Base configuration for all devices
+    model_kwargs = {
+        "trust_remote_code": True,
+        "token": auth_token,
+        "device_map": "auto",
+        "low_cpu_mem_usage": True
+    }
+    
+    # Device-specific optimizations
+    if device == "cuda":
+        model_kwargs["torch_dtype"] = torch.float16
+    elif device == "cpu":
+        model_kwargs["torch_dtype"] = torch.float32
+    elif device == "mps":
+        model_kwargs["torch_dtype"] = torch.float16
+        os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
+        torch.mps.empty_cache()
+    
+    # Load tokenizer and model
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, token=auth_token)
+    model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    
+    return model, tokenizer
 
-# 🔹 AVAILABLE MODELS (Choose one)
-MODEL_OPTIONS = {
-    "mistral": "mistralai/Mistral-7B-Instruct-v0.1",
-    "tinyllama": "TinyLlama/TinyLlama-1.1B-Chat-v1.0", # 2.2 gb
-    "mobilama": "microsoft/MobiLlama-0.5B",
-    "teenytinyllama": "TeenyTinyLlama/TeenyTinyLlama-100M",
-    "phi2": "microsoft/phi-2" # 5 gb
-}
-
-# Change this to switch between models
-selected_model = "phi2"  # Options: "mistral", "tinyllama", "mobilama", "teenytinyllama", "phi2"
-
-# Get model name
-model_name = MODEL_OPTIONS[selected_model]
-
-print(f"🔹 Loading model: {model_name}")
-
-# Move model to available device
-device = "cpu" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
-
-# Load tokenizer & model
-tokenizer = AutoTokenizer.from_pretrained(model_name, device_map=device, trust_remote_code=True, token=auth_token)
-model = AutoModelForCausalLM.from_pretrained(model_name, device_map=device, trust_remote_code=True, token=auth_token)
-
-model.to(device)
-
-# Function to generate responses & enforce JSON output
-def generate_response(prompt, max_length=25600, max_retries=3):
-    for attempt in range(max_retries):
-        inputs = tokenizer(prompt, return_tensors="pt").to(device)
-
+def generate_response(model, tokenizer, prompt, device, max_new_tokens=500):
+    """Generate response with optimized settings per device"""
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
+    inputs = inputs.to(device)
+    
+    generation_config = {
+        "max_new_tokens": max_new_tokens,
+        "do_sample": True,
+        "temperature": 0.7,
+        "top_k": 50,
+        "top_p": 0.9,
+        "pad_token_id": tokenizer.eos_token_id,
+        "repetition_penalty": 1.2,
+        "no_repeat_ngram_size": 3,
+        "num_return_sequences": 1,
+        "max_length": 1000,
+        "min_length": 50,
+        "early_stopping": True
+    }
+    
+    try:
         with torch.no_grad():
-            generated_ids = model.generate(inputs.input_ids, max_new_tokens=max_length, do_sample=True)
+            if device == "mps":
+                model.to('cpu')
+                inputs = inputs.to('cpu')
+                outputs = model.generate(inputs.input_ids, **generation_config)
+                model.to(device)
+            else:
+                outputs = model.generate(inputs.input_ids, **generation_config)
+        
+        # Only decode the new tokens (excluding the prompt)
+        prompt_length = inputs.input_ids.shape[1]
+        generated_tokens = outputs[0][prompt_length:]
+        return tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            
+    except Exception as e:
+        return f"Error generating response: {str(e)}"
 
-        output_text = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+def analyze_prompt_tokens(tokenizer, prompt, transcript):
+    """Analyze token usage of the prompt and transcript separately"""
+    # Analyze base prompt without transcript
+    base_prompt = prompt.replace(transcript, "")
+    base_tokens = tokenizer(base_prompt, return_tensors="pt")
+    base_token_count = len(base_tokens.input_ids[0])
+    
+    # Analyze transcript alone
+    transcript_tokens = tokenizer(transcript, return_tensors="pt")
+    transcript_token_count = len(transcript_tokens.input_ids[0])
+    
+    # Analyze full prompt
+    full_tokens = tokenizer(prompt, return_tensors="pt")
+    total_tokens = len(full_tokens.input_ids[0])
+    
+    print(f"\nPrompt Analysis:")
+    print(f"Base prompt tokens: {base_token_count}")
+    print(f"Transcript tokens: {transcript_token_count}")
+    print(f"Total tokens: {total_tokens}")
+    print(f"Token limit: {tokenizer.model_max_length}")
+    print(f"Tokens remaining: {tokenizer.model_max_length - total_tokens}")
+    return total_tokens
 
-        print(f"📝 Attempt {attempt+1} Output:\n{output_text}\n")
+def main():
+    # Load authentication token
+    token_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "token.json")
+    with open(token_path, 'r') as token_file:
+        auth_token = json.load(token_file)["HUGGING_FACE_TOKEN"]
+    
+    # Login to Hugging Face
+    login(auth_token)
+    
+    # Setup device and model
+    device = setup_device()
+    
+    phi_2 = "microsoft/phi-2"
+    phi_3_mini = "microsoft/phi-3-mini-128k-instruct"
 
-        # Extract JSON if model adds extra text
-        json_start = output_text.find("{")
-        json_end = output_text.rfind("}")
-        if json_start != -1 and json_end != -1:
-            output_text = output_text[json_start:json_end+1]  # Extract only JSON
+    model_name = phi_3_mini
+    model, tokenizer = load_model(model_name, device, auth_token)
+    
+    # Load transcript
+    transcript_path = "/Users/nickkleinsasser/Documents/DiarizationScoring/static/uploaded_videos/transcripts/77562204-d386-4fc9-a942-b3eb6886880f_transcript.json"
+    with open(transcript_path, 'r') as transcript_file:
+        transcript = json.load(transcript_file)["full_transcript"]
 
-        # Attempt to parse JSON
-        try:
-            response_json = json.loads(output_text)
-            return response_json  # Return valid parsed JSON
-        except json.JSONDecodeError:
-            print(f"⚠️ Attempt {attempt+1} failed: Model did not return valid JSON. Retrying...")
+    
+    
+    # Create prompt
+    prompt = f"""<|system|>
+You are an expert AI system that analyzes parent-child interactions. You must return ONLY a valid JSON object with exactly 6 scores between 0.0 and 1.0. Each score must have a brief explanation. Use this exact format:
+{{
+    "parent_responsiveness": {{
+        "score": 0.0,
+        "explanation": "One brief sentence explanation."
+    }},
+    "communication_quality": {{
+        "score": 0.0,
+        "explanation": "One brief sentence explanation."
+    }},
+    "emotional_attunement": {{
+        "score": 0.0,
+        "explanation": "One brief sentence explanation."
+    }},
+    "joint_engagement": {{
+        "score": 0.0,
+        "explanation": "One brief sentence explanation."
+    }},
+    "scaffolding": {{
+        "score": 0.0,
+        "explanation": "One brief sentence explanation."
+    }},
+    "stress_management": {{
+        "score": 0.0,
+        "explanation": "One brief sentence explanation."
+    }}
+}}<|end|>
+<|user|>
+Analyze this parent-child interaction. The transcript contains dialogue between a parent and child, though speakers may not be explicitly labeled. If interaction quality is poor or missing, score lower rather than marking as null or N/A.
 
-    return {"error": "Model failed to return valid JSON after multiple attempts."}
-
-# 🔹 Example Transcript
-transcript = """
-Mike: Hello, how are you?
-Bob: I'm good, how are you?
-Mike: I'm good too.
-Bob: That's great to hear.
-Mike: The weather is sunny.
-Bob: Yes, it's a beautiful day.
+Transcript of Child and Parent Interaction:
+{transcript}
+<|end|>
+<|assistant|>
 """
+    
+    # Analyze token usage
+    analyze_prompt_tokens(tokenizer, prompt, transcript)
+    
+    # Generate and print raw response
+    response = generate_response(model, tokenizer, prompt, device)
+    print("\nModel Response:")
+    print(response)
 
-# 🔹 Strong JSON-Enforced Prompt
-scoring_prompt = r"""
-Assistant is an intelligent Co-Pilot designed to evaluate a transcript interaction between a child and parent.
-Assistant's instructions contain markers inside of < > symbols. These are markers for the assistant to find information and should not be returned in Assistant's response.
-Evaluation Process
-Start with a base score of <Base Score: 1.0> and adjust based on key interaction aspects found in <Transcript>.
-Key Factors for Evaluation
-<Emotional Tone>
-<Supportive & empathetic> → <No Penalty>
-<Neutral or indifferent> → <Small Penalty>
-<Dismissive or invalidating> → <Larger Penalty>
-<Engagement & Active Listening>
-<Engaged, acknowledges childs feelings> → <No Penalty>
-<Somewhat engaged but lacking depth> → <Small Penalty>
-<Distracted, dismissive, or ignoring key points> → <Larger Penalty>
-<Guidance & Encouragement>
-<Provides constructive advice or encouragement> → <No Penalty>
-<Gives neutral or unclear guidance> → <Small Penalty>
-<No guidance, discouraging, or critical> → <Larger Penalty>
-<Respect & Communication Style>
-<Respects childs perspective, uses calm tone> → <No Penalty>
-<Occasionally interrupts or talks over child> → <Small Penalty>
-<Dominates conversation, invalidates childs viewpoint> → <Larger Penalty>
-<Conflict Handling (if applicable)>
-<Resolves disagreements calmly> → <No Penalty>
-<Some tension but no escalation> → <Small Penalty>
-<Escalates conflict, unresolved frustration> → <Larger Penalty>
-<Final Score Calculation>
-Start at <1.0> and subtract <Penalties> dynamically based on <Severity> of issues in <Transcript>.
-<Output Format>
-{
-  "Final Interaction Score": <double>
-}
-<Transcript>
-"""
-
-scoring_prompt += transcript
-scoring_prompt += "\n</Transcript>"
-
-# Generate Scored Response
-scored_response = generate_response(scoring_prompt)
-
-# Output final JSON result
-#output_json = json.dumps(scored_response, indent=4)
-print(scored_response)
+if __name__ == "__main__":
+    main()
