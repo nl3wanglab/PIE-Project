@@ -155,18 +155,11 @@
                     </div>
                     <div class="tab-pane fade" id="analytics">
                         <div class="analytics-section">
-                            <div class="chart-container">
-                                <canvas id="speakingTimeChart"></canvas>
-                            </div>
-                            <div class="chart-container">
-                                <canvas id="wordFrequencyChart"></canvas>
-                            </div>
-                            <div class="chart-row">
-                                <div class="chart-container half-width">
-                                    <canvas id="emotionsChart"></canvas>
-                                </div>
-                                <div class="chart-container half-width">
-                                    <canvas id="emotionsPieChart"></canvas>
+                            <h4>Analytics</h4>
+                            <button id="createChartButton" class="btn btn-primary">Create New Heart Rate Chart</button>
+                            <div id="chartsContainer">
+                                <div class="chart-container">
+                                    <canvas id="heartRateChart"></canvas>
                                 </div>
                             </div>
                             
@@ -200,10 +193,6 @@
                                         Please upload a CSV file with two columns of heart rate data
                                     </small>
                                 </form>
-                                
-                                <div class="chart-container">
-                                    <canvas id="heartRateChart"></canvas>
-                                </div>
                                 
                                 <div class="table-responsive mt-3">
                                     <table class="table table-striped">
@@ -249,5 +238,19 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="viewer.js"></script>
+    <script>
+        // Add interactivity to the heart rate chart
+        const heartRateChartCanvas = document.getElementById('heartRateChart');
+        heartRateChartCanvas.onclick = function(event) {
+            const activePoints = heartRateChart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false);
+            if (activePoints.length) {
+                const index = activePoints[0].index;
+                const timeInSeconds = index; // Assuming 1-second intervals
+                const videoPlayer = document.getElementById('videoPlayer');
+                videoPlayer.currentTime = timeInSeconds; // Seek to the corresponding time in the video
+                videoPlayer.play(); // Optionally play the video
+            }
+        };
+    </script>
 </body>
 </html> 

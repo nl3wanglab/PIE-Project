@@ -20,7 +20,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("debug.log"),
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler()
     ]
 )
 
@@ -563,10 +563,15 @@ class API:
             logging.error(f"Error deleting HR data: {str(e)}")
             return {"success": False, "error": str(e)}
 
+    def log_js_error(self, error_message):
+        """Log JavaScript errors from the frontend"""
+        logging.error(f"JavaScript Error: {error_message}")
+        return {"success": True}
+
 def main():
-    # Create a webview window
+    # Create a webview window without specifying a backend
     window = webview.create_window('Video Dashboard', 'static/index.html', width=1000, height=700, js_api=API())
-    webview.start(debug=True)
+    webview.start(debug=True)  # Enable debug mode
 
 if __name__ == "__main__":
     main() 

@@ -38,6 +38,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     initializeComponents();
 
     // Handle transcript view switching
+    const analyticsTab = document.querySelector('a[href="#analytics"]'); // Select the Analytics tab
+
+    analyticsTab.addEventListener('click', function() {
+        // Call the createHeartRateChart function when the Analytics tab is opened
+        try {
+            createHeartRateChart(); // Call the function to create a new chart
+        } catch (error) {
+            console.error("Error creating chart:", error);
+        }
+    });
+
     const diarizedBtn = document.getElementById('diarizedBtn');
     const fullBtn = document.getElementById('fullBtn');
     const transcriptContent = document.getElementById('transcriptContent');
@@ -252,6 +263,21 @@ document.addEventListener('DOMContentLoaded', async function() {
                 segment.classList.remove('current-segment');
             }
         });
+    });
+
+    // Add event listener for the Create New Chart button
+    const createChartButton = document.getElementById('createChartButton');
+    createChartButton.addEventListener('click', function() {
+        // Assuming you have the parsed data stored in a variable
+        if (window.heartRateData) { // Check if heart rate data is available
+            try {
+                createHeartRateChart(window.heartRateData); // Pass the real data to create the chart
+            } catch (error) {
+                console.error("Error creating chart:", error);
+            }
+        } else {
+            console.error("No heart rate data available to create chart.");
+        }
     });
 
     // Additional code to load the video can go here
@@ -677,17 +703,19 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Add this after your existing code
-document.getElementById('heartRateFile').addEventListener('change', function(e) {
+document.getElementById('hrDataFile').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = function(e) {
-        const text = e.target.result;
-        const data = parseHeartRateData(text);
-        if (data) {
-            updateHeartRateChart(data);
-            displayHeartRateTable(data);
+        const csvData = e.target.result;
+        const parsedData = parseHeartRateData(csvData); // Parse the CSV data
+        console.log(parsedData);
+        if (parsedData) { // Check if parsed data is valid
+            uploadHRData(parsedData, window.currentGuid);
+        } else {
+            showMessage('Error parsing heart rate data. Please ensure the file is in the correct format.', 'error');
         }
     };
     reader.readAsText(file);
@@ -700,7 +728,7 @@ function parseHeartRateData(csvText) {
             .map(row => {
                 const [timeStr, bpmStr] = row.split(',').map(s => s.trim());
                 if (!timeStr || !bpmStr) return null;
-                
+
                 // Parse time (expecting format like "MM:SS" or "HH:MM:SS")
                 const timeComponents = timeStr.split(':').map(Number);
                 let seconds = 0;
@@ -713,11 +741,11 @@ function parseHeartRateData(csvText) {
                 const bpm = parseFloat(bpmStr);
                 if (isNaN(seconds) || isNaN(bpm)) return null;
 
-                return { timestamp: seconds, bpm: bpm };
+                return { timestamp: seconds, parent: bpm }; // Ensure you return the correct structure
             })
             .filter(item => item !== null);
 
-        return data;
+        return data; // Return the parsed data
     } catch (error) {
         console.error('Error parsing heart rate data:', error);
         alert('Error parsing file. Please ensure it\'s in the correct format (Time,BPM)');
@@ -725,29 +753,105 @@ function parseHeartRateData(csvText) {
     }
 }
 
-function updateHeartRateChart(data) {
-    // Sort data by timestamp
-    data.sort((a, b) => a.timestamp - b.timestamp);
+function updateHeartRateTable(data) {
+    const tableBody = document.getElementById('heartRateTableBody');
+    tableBody.innerHTML = data
+        .map((row, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${row.child}</td>
+                <td>${row.parent}</td>
+            </tr>
+        `)
+        .join('');
 
-    // Update the heart rate chart
-    window.heartRateChart.data.labels = data.map(d => formatTimestamp(d.timestamp));
-    window.heartRateChart.data.datasets[0].data = data.map(d => d.bpm);
-    window.heartRateChart.update();
-
-    // Store the data for later use
-    window.heartRateData = data;
+    // Create the heart rate chart after updating the table
+    createHeartRateChart(data);
 }
 
 function displayHeartRateTable(data) {
     const tableBody = document.getElementById('heartRateTableBody');
     tableBody.innerHTML = data
-        .map(row => `
+        .map((row, index) => `
             <tr>
-                <td>${formatTimestamp(row.timestamp)}</td>
-                <td>${row.bpm}</td>
+                <td>${index + 1}</td>
+                <td>${row.child}</td>
+                <td>${row.parent}</td>
             </tr>
         `)
         .join('');
+}
+
+// Function to create the heart rate chart
+function createHeartRateChart(data) {
+    // Create a new canvas element for the chart
+    const newCanvas = document.createElement('canvas');
+    newCanvas.className = 'heartRateChart'; // Optional: add a class for styling
+    document.getElementById('chartsContainer').appendChild(newCanvas); // Append to the charts container
+
+    const ctx = newCanvas.getContext('2d');
+
+    // Use the real data passed to the function
+    const labels = data.map(row => row.timestamp); // Assuming 'timestamp' is in seconds
+    const parentHR = data.map(row => row.parent);
+    const childHR = data.map(row => row.child);
+
+    // Log the real data for debugging
+    console.log("Real Chart Data:", { labels, parentHR, childHR });
+
+    const heartRateChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Parent Heart Rate',
+                    data: parentHR,
+                    borderColor: 'rgb(255, 99, 132)',
+                    fill: false,
+                    tension: 0.1
+                },
+                {
+                    label: 'Child Heart Rate',
+                    data: childHR,
+                    borderColor: 'rgb(75, 192, 192)',
+                    fill: false,
+                    tension: 0.1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Time (seconds)'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Heart Rate (BPM)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Update the existing uploadHRData function to call updateHeartRateTable
+function uploadHRData(fileData, guid) {
+    if (fileData) {
+        console.log("Parsed HR Data:", fileData); // Log the parsed data for debugging
+        window.heartRateData = fileData; // Store the parsed data globally
+        updateHeartRateTable(fileData); // Call the updated function
+        displayHeartRateTable(fileData);
+    }
 }
 
 // Update the existing updateCharts function to use the loaded heart rate data
@@ -918,11 +1022,13 @@ function updateHRChart(data) {
             label: 'Parent HR',
             data: data.map(row => row.parent),
             borderColor: 'rgb(255, 99, 132)',
+            fill: false,
             tension: 0.1
         }, {
             label: 'Child HR',
             data: data.map(row => row.child),
             borderColor: 'rgb(75, 192, 192)',
+            fill: false,
             tension: 0.1
         }];
         window.heartRateChart.update();
@@ -983,4 +1089,17 @@ function clearHRDisplay() {
         }];
         window.heartRateChart.update();
     }
-} 
+}
+
+// Global error handler
+window.onerror = function(message, source, lineno, colno, error) {
+    const errorMessage = `Error: ${message} at ${source}:${lineno}:${colno}`;
+    console.error(errorMessage); // Log to console
+
+    // Send error to Python backend
+    if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.log_js_error(errorMessage).catch(err => {
+            console.error("Failed to log error to backend:", err);
+        });
+    }
+}; 
