@@ -774,13 +774,11 @@ function updateHeartRateTable(data) {
         .join('');
 }
 
-// Global chart variables
-let parentHeartRateChart = null;
-let childHeartRateChart = null;
-let combinedHeartRateChart = null;
+// Global chart variable
+let heartRateChart = null;
 
 function createHeartRateCharts(data) {
-    console.log("Creating heart rate charts with data:", data);
+    console.log("Creating heart rate chart with data:", data);
     
     // Verify data structure
     if (!data || !Array.isArray(data) || data.length === 0) {
@@ -788,33 +786,21 @@ function createHeartRateCharts(data) {
         return;
     }
     
-    // Clear any existing charts
-    if (parentHeartRateChart) {
-        parentHeartRateChart.destroy();
-        parentHeartRateChart = null;
-    }
-    if (childHeartRateChart) {
-        childHeartRateChart.destroy();
-        childHeartRateChart = null;
-    }
-    if (combinedHeartRateChart) {
-        combinedHeartRateChart.destroy();
-        combinedHeartRateChart = null;
+    // Clear any existing chart
+    if (heartRateChart) {
+        heartRateChart.destroy();
     }
     
-    // Get the canvas elements
-    const parentCanvas = document.getElementById('parentHeartRateChart');
-    const childCanvas = document.getElementById('childHeartRateChart');
+    // Get the canvas element - we'll use the parent one for the combined chart
+    const canvas = document.getElementById('parentHeartRateChart');
     
-    if (!parentCanvas || !childCanvas) {
-        console.error("Canvas elements not found:", {
-            parentCanvas: !!parentCanvas,
-            childCanvas: !!childCanvas
-        });
+    if (!canvas) {
+        console.error("Canvas element not found");
         return;
     }
     
-    // Extract data
+    const ctx = canvas.getContext('2d');
+    
     // First, add timestamps if they don't exist
     if (!data[0].hasOwnProperty('timestamp')) {
         data = data.map((row, index) => ({
@@ -827,146 +813,19 @@ function createHeartRateCharts(data) {
     const parentHR = data.map(row => row.parent);
     const childHR = data.map(row => row.child);
     
-    // Calculate appropriate min and max for y-axis
-    function calculateYAxisRange(dataArray) {
-        const validData = dataArray.filter(val => val !== undefined && val !== null);
-        if (validData.length === 0) return { min: 50, max: 150 };
-        
-        const min = Math.min(...validData);
-        const max = Math.max(...validData);
-        const padding = 10; // 10 BPM padding
-        
-        return {
-            min: Math.max(0, min - padding), // Don't go below 0
-            max: max + padding
-        };
-    }
+    // Calculate min and max for dynamic y-axis scaling
+    const allValues = [...parentHR, ...childHR].filter(val => val !== undefined && val !== null);
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
     
-    const parentRange = calculateYAxisRange(parentHR);
-    const childRange = calculateYAxisRange(childHR);
+    // Set scale to be min-10 to max+10, with a minimum range of 40
+    const yMin = Math.max(40, min - 10);
+    const yMax = Math.max(yMin + 40, max + 10);
     
-    // Use the wider range to accommodate both datasets
-    const yAxisMin = Math.min(parentRange.min, childRange.min);
-    const yAxisMax = Math.max(parentRange.max, childRange.max);
-    
-    // Create parent heart rate chart
-    parentHeartRateChart = new Chart(parentCanvas.getContext('2d'), {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Parent Heart Rate',
-                data: parentHR,
-                borderColor: 'rgb(255, 99, 132)',
-                backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                fill: true,
-                tension: 0.3
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
-            scales: {
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Time (seconds)'
-                    }
-                },
-                y: {
-                    title: {
-                        display: true,
-                        text: 'Heart Rate (BPM)'
-                    },
-                    min: yAxisMin,
-                    max: yAxisMax
-                }
-            }
-        }
-    });
-    
-    // Create child heart rate chart
-    childHeartRateChart = new Chart(childCanvas.getContext('2d'), {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Child Heart Rate',
-                data: childHR,
-                borderColor: 'rgb(75, 192, 192)',
-                backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                fill: true,
-                tension: 0.3
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
-            scales: {
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Time (seconds)'
-                    }
-                },
-                y: {
-                    title: {
-                        display: true,
-                        text: 'Heart Rate (BPM)'
-                    },
-                    min: yAxisMin,
-                    max: yAxisMax
-                }
-            }
-        }
-    });
-    
-    // Create combined chart container if it doesn't exist
-    let combinedChartContainer = document.getElementById('combinedChartContainer');
-    if (!combinedChartContainer) {
-        combinedChartContainer = document.createElement('div');
-        combinedChartContainer.id = 'combinedChartContainer';
-        combinedChartContainer.className = 'chart-container';
-        
-        // Create canvas for combined chart
-        const combinedCanvas = document.createElement('canvas');
-        combinedCanvas.id = 'combinedHeartRateChart';
-        combinedChartContainer.appendChild(combinedCanvas);
-        
-        // Create toggle controls
-        const toggleControls = document.createElement('div');
-        toggleControls.className = 'toggle-controls d-flex justify-content-center mt-2';
-        toggleControls.innerHTML = `
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="toggleParent" checked>
-                <label class="form-check-label" for="toggleParent">Parent HR</label>
-            </div>
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="toggleChild" checked>
-                <label class="form-check-label" for="toggleChild">Child HR</label>
-            </div>
-        `;
-        combinedChartContainer.appendChild(toggleControls);
-        
-        // Add the container before the first individual chart
-        const chartsContainer = document.getElementById('chartsContainer');
-        chartsContainer.insertBefore(combinedChartContainer, chartsContainer.firstChild);
-        
-        // Add toggle event listeners
-        document.getElementById('toggleParent').addEventListener('change', toggleDataset);
-        document.getElementById('toggleChild').addEventListener('change', toggleDataset);
-    }
+    console.log("Heart Rate Range:", { min, max, yMin, yMax });
     
     // Create combined heart rate chart
-    combinedHeartRateChart = new Chart(document.getElementById('combinedHeartRateChart').getContext('2d'), {
+    heartRateChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
@@ -993,7 +852,8 @@ function createHeartRateCharts(data) {
             responsive: true,
             maintainAspectRatio: false,
             interaction: {
-                mode: 'index',
+                mode: 'nearest',
+                axis: 'x',
                 intersect: false
             },
             scales: {
@@ -1008,112 +868,44 @@ function createHeartRateCharts(data) {
                         display: true,
                         text: 'Heart Rate (BPM)'
                     },
-                    min: yAxisMin,
-                    max: yAxisMax
+                    min: yMin,
+                    max: yMax
+                }
+            },
+            onClick: function(event, elements, chart) {
+                // Get the x-axis value (time) where the user clicked
+                const canvasPosition = Chart.helpers.getRelativePosition(event, chart);
+                const timeValue = chart.scales.x.getValueForPixel(canvasPosition.x);
+                
+                // Find the closest timestamp in our data
+                const closestTimeIndex = labels.reduce((prev, curr, index) => {
+                    return (Math.abs(curr - timeValue) < Math.abs(labels[prev] - timeValue)) 
+                        ? index 
+                        : prev;
+                }, 0);
+                
+                const timeInSeconds = labels[closestTimeIndex];
+                
+                // Seek the video to this time
+                const videoPlayer = document.getElementById('videoPlayer');
+                if (videoPlayer) {
+                    videoPlayer.currentTime = timeInSeconds;
+                    videoPlayer.play();
                 }
             }
         }
     });
     
-    // Add click event handlers to charts
-    parentCanvas.onclick = chartClickHandler;
-    childCanvas.onclick = chartClickHandler;
-    document.getElementById('combinedHeartRateChart').onclick = chartClickHandler;
+    // Hide the second chart container since we're only using one
+    const childChartContainer = document.getElementById('childHeartRateChart').parentNode;
+    if (childChartContainer) {
+        childChartContainer.style.display = 'none';
+    }
     
-    console.log("Charts created successfully");
+    console.log("Heart rate chart created successfully");
 }
 
-// Function to toggle dataset visibility
-function toggleDataset(e) {
-    const datasetId = e.target.id === 'toggleParent' ? 0 : 1;
-    const isVisible = e.target.checked;
-    
-    if (combinedHeartRateChart) {
-        combinedHeartRateChart.data.datasets[datasetId].hidden = !isVisible;
-        combinedHeartRateChart.update();
-    }
-}
-
-// Update chartClickHandler to handle the combined chart
-function chartClickHandler(event) {
-    let chart;
-    if (this.id === 'parentHeartRateChart') {
-        chart = parentHeartRateChart;
-    } else if (this.id === 'childHeartRateChart') {
-        chart = childHeartRateChart;
-    } else if (this.id === 'combinedHeartRateChart') {
-        chart = combinedHeartRateChart;
-    }
-    
-    if (chart) {
-        const activePoints = chart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false);
-        if (activePoints.length) {
-            const index = activePoints[0].index;
-            const timeInSeconds = chart.data.labels[index]; // Use the timestamp as the time
-            const videoPlayer = document.getElementById('videoPlayer');
-            if (videoPlayer) {
-                videoPlayer.currentTime = timeInSeconds;
-                videoPlayer.play();
-            }
-        }
-    }
-}
-
-// Add CSS for the toggle controls
-const style = document.createElement('style');
-style.textContent = `
-    .chart-container {
-        margin-bottom: 20px;
-        height: 250px;
-        width: 100%;
-        position: relative;
-    }
-    
-    canvas {
-        display: block;
-        width: 100% !important;
-        height: 100% !important;
-    }
-    
-    .toggle-controls {
-        margin-top: 10px;
-    }
-    
-    .form-check-input {
-        cursor: pointer;
-    }
-    
-    .form-check-label {
-        cursor: pointer;
-        user-select: none;
-    }
-`;
-document.head.appendChild(style);
-
-// Update the existing uploadHRData function to call updateHeartRateTable
-function uploadHRData(fileData, guid) {
-    if (fileData) {
-        console.log("Parsed HR Data:", fileData); 
-        window.heartRateData = fileData; // Store the parsed data globally
-        updateHeartRateTable(fileData);
-        createHeartRateCharts(fileData);
-    }
-}
-
-// Update the existing updateCharts function to use the loaded heart rate data
-const originalUpdateCharts = updateCharts;
-updateCharts = function(transcriptData) {
-    originalUpdateCharts(transcriptData);
-    
-    // If we have heart rate data loaded from file, use that instead
-    if (window.heartRateData) {
-        window.heartRateChart.data.labels = window.heartRateData.map(d => formatTimestamp(d.timestamp));
-        window.heartRateChart.data.datasets[0].data = window.heartRateData.map(d => d.bpm);
-        window.heartRateChart.update();
-    }
-};
-
-// Update the initializeHRDataHandling function
+// Initialize HR data handling
 async function initializeHRDataHandling(guid) {
     const hrDataUploadForm = document.getElementById('hrDataUploadForm');
     const hrDataStatus = document.getElementById('hrDataStatus');
@@ -1326,4 +1118,37 @@ window.onerror = function(message, source, lineno, colno, error) {
             console.error("Failed to log error to backend:", err);
         });
     }
-}; 
+};
+
+// Add interactivity to the heart rate chart
+const heartRateChartCanvas = document.getElementById('heartRateChart');
+heartRateChartCanvas.onclick = function(event) {
+    if (window.heartRateChart) { // Check if the chart instance exists
+        const activePoints = window.heartRateChart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false);
+        if (activePoints.length) {
+            const index = activePoints[0].index;
+            const timeInSeconds = window.heartRateChart.data.labels[index]; // Use the label for time
+            const videoPlayer = document.getElementById('videoPlayer');
+            videoPlayer.currentTime = timeInSeconds; // Seek to the corresponding time in the video
+            videoPlayer.play(); // Optionally play the video
+        }
+    } else {
+        console.error("Heart rate chart instance is not available.");
+    }
+};
+
+function chartClickHandler(event) {
+    const chart = this.id === 'parentHeartRateChart' ? parentHeartRateChart : childHeartRateChart;
+    if (chart) {
+        const activePoints = chart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false);
+        if (activePoints.length) {
+            const index = activePoints[0].index;
+            const timeInSeconds = chart.data.labels[index]; // Use the timestamp as the time
+            const videoPlayer = document.getElementById('videoPlayer');
+            if (videoPlayer) {
+                videoPlayer.currentTime = timeInSeconds;
+                videoPlayer.play();
+            }
+        }
+    }
+} 

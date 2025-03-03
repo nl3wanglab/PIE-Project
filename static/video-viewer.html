@@ -116,6 +116,21 @@
         .table-sm {
             font-size: 0.8em;
         }
+
+        .chart-container {
+            margin-bottom: 20px;
+            height: 300px;
+            width: 100%;
+            position: relative;
+        }
+        
+        .dataset-toggles .btn-outline-danger.active {
+            background-color: rgba(255, 99, 132, 0.2);
+        }
+        
+        .dataset-toggles .btn-outline-info.active {
+            background-color: rgba(75, 192, 192, 0.2);
+        }
     </style>
 </head>
 <body>
@@ -160,7 +175,7 @@
                                 <div class="chart-container">
                                     <canvas id="parentHeartRateChart"></canvas>
                                 </div>
-                                <div class="chart-container">
+                                <div class="chart-container" style="display:none;">
                                     <canvas id="childHeartRateChart"></canvas>
                                 </div>
                             </div>
