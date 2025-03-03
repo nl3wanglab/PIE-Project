@@ -115,6 +115,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     function displayDiarizedTranscript(segments) {
+        if (!segments || !segments.length) {
+            console.error("No segments to display in diarized transcript");
+            return;
+        }
+        
+        const transcriptContent = document.getElementById('transcriptContent');
+        if (!transcriptContent) return;
+        
         transcriptContent.innerHTML = segments.map(segment => `
             <div class="transcript-segment" data-start="${segment.start}" data-end="${segment.end}">
                 <div class="speaker-label">Speaker ${segment.speaker}</div>
@@ -127,13 +135,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         document.querySelectorAll('.transcript-segment').forEach(segment => {
             segment.addEventListener('click', function() {
                 const startTime = parseFloat(this.dataset.start);
+                const videoPlayer = document.getElementById('videoPlayer');
+                if (videoPlayer) {
                 videoPlayer.currentTime = startTime;
                 videoPlayer.play();
-                
-                // Highlight current segment
-                document.querySelectorAll('.transcript-segment').forEach(s => 
-                    s.classList.remove('current-segment'));
-                this.classList.add('current-segment');
+                }
             });
         });
     }
@@ -158,6 +164,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     initializeTranscript();
 
     function displayFullTranscript(transcriptData) {
+        if (!transcriptData || !transcriptData.segments) {
+            console.error("Invalid transcript data");
+            return;
+        }
+        
         const container = document.createElement('div');
         container.className = 'transcript-container';
 
@@ -183,20 +194,20 @@ document.addEventListener('DOMContentLoaded', async function() {
             // Add click handler to jump to timestamp
             segmentDiv.addEventListener('click', () => {
                 const videoPlayer = document.getElementById('videoPlayer');
+                if (videoPlayer) {
                 videoPlayer.currentTime = startTime;
                 videoPlayer.play();
+                }
             });
 
             container.appendChild(segmentDiv);
         });
 
         const transcriptContent = document.getElementById('transcriptContent');
+        if (transcriptContent) {
         transcriptContent.innerHTML = '';
         transcriptContent.appendChild(container);
-
-        // Initialize and update charts
-        initializeCharts();
-        updateCharts(transcriptData);
+        }
     }
 
     function formatTimestamp(seconds) {
@@ -731,7 +742,7 @@ function parseHeartRateData(csvText) {
                 const timeStr = values[0];
                 const parentBpm = parseFloat(values[1]);
                 const childBpm = parseFloat(values[2]);
-
+                
                 // Parse time (expecting format like "MM:SS" or "HH:MM:SS")
                 const timeComponents = timeStr.split(':').map(Number);
                 let seconds = 0;
@@ -824,7 +835,74 @@ function createHeartRateCharts(data) {
     
     console.log("Heart Rate Range:", { min, max, yMin, yMax });
     
-    // Create combined heart rate chart
+    // Create a vertical line annotation plugin
+    const verticalLinePlugin = {
+        id: 'verticalLine',
+        beforeDraw: (chart) => {
+            if (chart.tooltip?._active?.length && chart.config._config.type === 'line') {
+                // Only show on hover
+                return;
+            }
+            
+            // Get current video time for positioning the line
+            const videoPlayer = document.getElementById('videoPlayer');
+            if (!videoPlayer) return;
+            
+            const currentTime = videoPlayer.currentTime;
+            
+            // Find the closest x value to the current time
+            const xAxis = chart.scales.x;
+            const yAxis = chart.scales.y;
+            
+            // Skip if outside the chart range
+            if (currentTime < xAxis.min || currentTime > xAxis.max) return;
+            
+            const xPixel = xAxis.getPixelForValue(currentTime);
+            
+            // Get canvas context and draw vertical line
+            const ctx = chart.ctx;
+            
+            // Draw vertical line
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(xPixel, yAxis.top);
+            ctx.lineTo(xPixel, yAxis.bottom);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#FF0000';
+            ctx.stroke();
+            
+            // Draw circle at the intersection with each dataset
+            ctx.lineWidth = 2;
+            
+            chart.data.datasets.forEach((dataset, i) => {
+                // Find the nearest data point
+                const meta = chart.getDatasetMeta(i);
+                if (meta.hidden) return;
+                
+                // Get closest point index
+                const pointIndex = labels.reduce((prev, curr, idx) => {
+                    return Math.abs(curr - currentTime) < Math.abs(labels[prev] - currentTime) ? idx : prev;
+                }, 0);
+                
+                // Draw marker at this point's y-position
+                if (pointIndex >= 0 && dataset.data[pointIndex] !== undefined) {
+                    const yValue = dataset.data[pointIndex];
+                    const yPixel = yAxis.getPixelForValue(yValue);
+                    
+                    ctx.beginPath();
+                    ctx.arc(xPixel, yPixel, 5, 0, 2 * Math.PI);
+                    ctx.fillStyle = dataset.borderColor;
+                    ctx.fill();
+                    ctx.strokeStyle = 'white';
+                    ctx.stroke();
+                }
+            });
+            
+            ctx.restore();
+        }
+    };
+    
+    // Create combined heart rate chart with the plugin
     heartRateChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -893,7 +971,8 @@ function createHeartRateCharts(data) {
                     videoPlayer.play();
                 }
             }
-        }
+        },
+        plugins: [verticalLinePlugin]
     });
     
     // Hide the second chart container since we're only using one
@@ -903,6 +982,17 @@ function createHeartRateCharts(data) {
     }
     
     console.log("Heart rate chart created successfully");
+    
+    // Set up video timeupdate event to update the chart
+    const videoPlayer = document.getElementById('videoPlayer');
+    if (videoPlayer) {
+        videoPlayer.addEventListener('timeupdate', function() {
+            // Request animation frame to update the chart
+            if (heartRateChart) {
+                heartRateChart.update();
+            }
+        });
+    }
 }
 
 // Initialize HR data handling
@@ -1105,7 +1195,7 @@ function clearHRDisplay() {
         }];
         window.heartRateChart.update();
     }
-}
+} 
 
 // Global error handler
 window.onerror = function(message, source, lineno, colno, error) {
@@ -1151,4 +1241,197 @@ function chartClickHandler(event) {
             }
         }
     }
-} 
+}
+
+// Enhanced transcript scrolling functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const videoPlayer = document.getElementById('videoPlayer');
+    
+    if (videoPlayer) {
+        // Remove any existing timeupdate listeners to prevent duplicates
+        videoPlayer.removeEventListener('timeupdate', updateOnTimeChange);
+        
+        // Add the event listener for time updates
+        videoPlayer.addEventListener('timeupdate', updateOnTimeChange);
+        
+        // Initialize transcript view
+        const fullBtn = document.getElementById('fullBtn');
+        if (fullBtn && fullBtn.classList.contains('active')) {
+            loadFullTranscript();
+        } else {
+            const diarizedBtn = document.getElementById('diarizedBtn');
+            if (diarizedBtn && diarizedBtn.classList.contains('active')) {
+                loadDiarizedTranscript();
+            }
+        }
+    }
+    
+    // Ensure transcript container has proper styling
+    const transcriptContent = document.getElementById('transcriptContent');
+    if (transcriptContent) {
+        transcriptContent.style.overflowY = 'auto';
+        transcriptContent.style.maxHeight = '500px'; // Set appropriate height
+        transcriptContent.style.scrollBehavior = 'smooth';
+    }
+});
+
+// Throttle function to limit how often a function can run
+function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
+}
+
+// Keep track of scrolling status to prevent overlapping scroll operations
+let isScrolling = false;
+let lastActiveSegmentId = null;
+
+// Function that updates both chart and transcript on video time change
+function updateOnTimeChange() {
+    const currentTime = this.currentTime;
+    
+    // Update transcript highlighting and scrolling (throttled)
+    updateTranscriptHighlightingThrottled(currentTime);
+    
+    // Update chart if it exists
+    if (heartRateChart) {
+        heartRateChart.update();
+    }
+}
+
+// Create a throttled version of the updateTranscriptHighlighting function
+const updateTranscriptHighlightingThrottled = throttle(updateTranscriptHighlighting, 200);
+
+// Improved transcript highlighting and scrolling function
+function updateTranscriptHighlighting(currentTime) {
+    const segments = document.querySelectorAll('.transcript-segment');
+    const transcriptContent = document.getElementById('transcriptContent');
+    
+    if (!segments.length || !transcriptContent) {
+        return;
+    }
+    
+    let activeSegment = null;
+    
+    // Find the active segment
+    segments.forEach(segment => {
+        const start = parseFloat(segment.dataset.start || 0);
+        const end = parseFloat(segment.dataset.end || 0);
+        
+        // Remove current highlight from all segments
+        segment.classList.remove('current-segment');
+        
+        // Add highlight to current segment
+        if (currentTime >= start && currentTime <= end) {
+            segment.classList.add('current-segment');
+            activeSegment = segment;
+        }
+    });
+    
+    // Only scroll when we move to a new segment and we're not already scrolling
+    if (activeSegment && !isScrolling) {
+        const currentSegmentId = activeSegment.dataset.start + '-' + activeSegment.dataset.end;
+        
+        // Only scroll when we have a new active segment
+        if (currentSegmentId !== lastActiveSegmentId) {
+            // Record this segment as the last one we scrolled to
+            lastActiveSegmentId = currentSegmentId;
+            
+            // Calculate optimal scroll position
+            const containerRect = transcriptContent.getBoundingClientRect();
+            const segmentRect = activeSegment.getBoundingClientRect();
+            
+            // Get the top of the segment relative to the container
+            const segmentTop = segmentRect.top - containerRect.top;
+            
+            // Calculate ideal position to center the segment
+            const containerHeight = containerRect.height;
+            const segmentHeight = segmentRect.height;
+            
+            // Target position centers the segment in the visible area
+            const targetPosition = transcriptContent.scrollTop + segmentTop - (containerHeight/2) + (segmentHeight/2);
+            
+            // Set scrolling flag to prevent overlapping scroll operations
+            isScrolling = true;
+            
+            // Use smooth scrolling with promises to track completion
+            transcriptContent.scrollTo({
+                top: targetPosition,
+                behavior: 'smooth'
+            });
+            
+            // Reset the scrolling flag after animation completes (approximately 300ms for most browsers)
+            setTimeout(() => {
+                isScrolling = false;
+            }, 500);
+        }
+    }
+}
+
+// Only update style tags once when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if we've already added this style
+    if (!document.getElementById('transcript-smooth-scroll-style')) {
+        const style = document.createElement('style');
+        style.id = 'transcript-smooth-scroll-style';
+        style.textContent = `
+            #transcriptContent {
+                scroll-behavior: smooth;
+                padding-right: 10px;
+                overflow-y: auto;
+                max-height: 500px;
+                scrollbar-width: thin;
+                scrollbar-color: rgba(0,0,0,0.2) transparent;
+            }
+            
+            #transcriptContent::-webkit-scrollbar {
+                width: 8px;
+            }
+            
+            #transcriptContent::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            
+            #transcriptContent::-webkit-scrollbar-thumb {
+                background-color: rgba(0,0,0,0.2);
+                border-radius: 4px;
+            }
+            
+            .transcript-segment {
+                padding: 12px;
+                margin-bottom: 10px;
+                border-left: 3px solid #ccc;
+                background: #f8f9fa;
+                transition: all 0.25s ease;
+                border-radius: 4px;
+                cursor: pointer;
+                transform: translateX(0);
+            }
+            
+            .transcript-segment.current-segment {
+                background-color: #e2f0ff;
+                border-left: 3px solid #0056b3;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+                transform: translateX(5px);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Set up event listeners for video player
+    const videoPlayer = document.getElementById('videoPlayer');
+    if (videoPlayer) {
+        // Remove any existing event listeners to prevent duplicates
+        videoPlayer.removeEventListener('timeupdate', updateOnTimeChange);
+        
+        // Add event listener for time updates
+        videoPlayer.addEventListener('timeupdate', updateOnTimeChange);
+    }
+}); 

@@ -64,25 +64,36 @@
         }
 
         .transcript-segment {
-            padding: 10px;
+            padding: 12px;
             margin-bottom: 10px;
-            border-left: 3px solid #007bff;
+            border-left: 3px solid #ccc;
             background: #f8f9fa;
+            transition: all 0.3s ease;
+            border-radius: 4px;
+            cursor: pointer;
         }
 
         .transcript-segment:hover {
-            background: #e9ecef;
-            cursor: pointer;
+            background-color: #e9ecef;
+        }
+
+        .transcript-segment.current-segment {
+            background-color: #e2f0ff;
+            border-left: 3px solid #0056b3;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            transform: translateX(5px);
         }
 
         .timestamp {
             color: #6c757d;
-            font-size: 0.9em;
+            font-size: 0.85rem;
+            margin-bottom: 5px;
         }
 
         .speaker-label {
             font-weight: bold;
-            color: #007bff;
+            color: #0056b3;
+            margin-bottom: 5px;
         }
 
         .controls-container {
@@ -130,6 +141,18 @@
         
         .dataset-toggles .btn-outline-info.active {
             background-color: rgba(75, 192, 192, 0.2);
+        }
+
+        /* Smooth scrolling for transcript */
+        #transcriptContent {
+            scroll-behavior: smooth;
+            padding-right: 10px;
+            overflow-y: auto;
+            max-height: 500px; /* Set this based on your layout */
+        }
+
+        .segment-text {
+            line-height: 1.5;
         }
     </style>
 </head>
