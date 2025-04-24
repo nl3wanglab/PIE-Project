@@ -550,6 +550,40 @@ class API:
             logging.error(f"Error getting HR data: {str(e)}")
             return {"success": False, "error": str(e)}
 
+    def save_scores(self, guid, scores):
+        """Save scoring data for a video"""
+        try:
+            scores_dir = os.path.join(UPLOAD_FOLDER, 'scores')
+            os.makedirs(scores_dir, exist_ok=True)
+            
+            scores_file = os.path.join(scores_dir, f"{guid}_scores.json")
+            
+            # Save scores to file
+            with open(scores_file, 'w') as f:
+                json.dump({
+                    'scores': scores,
+                    'timestamp': str(datetime.datetime.now())
+                }, f, indent=2)
+            
+            logging.info(f"Saved scores for {guid}")
+            return {"success": True}
+        except Exception as e:
+            logging.error(f"Error saving scores: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def get_scores(self, guid):
+        """Get scoring data for a video"""
+        try:
+            scores_file = os.path.join(UPLOAD_FOLDER, 'scores', f"{guid}_scores.json")
+            if os.path.exists(scores_file):
+                with open(scores_file, 'r') as f:
+                    data = json.load(f)
+                    return {"success": True, "data": data}
+            return {"success": True, "data": {'scores': {}}}
+        except Exception as e:
+            logging.error(f"Error getting scores: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     def delete_hr_data(self, guid):
         """Delete HR data for a video using GUID"""
         try:
@@ -567,6 +601,43 @@ class API:
         """Log JavaScript errors from the frontend"""
         logging.error(f"JavaScript Error: {error_message}")
         return {"success": True}
+
+    def save_diarization(self, guid, segments):
+        """Save speaker assignments for a video"""
+        try:
+            # Create diarization directory if it doesn't exist
+            diarization_dir = os.path.join(UPLOAD_FOLDER, 'diarization')
+            os.makedirs(diarization_dir, exist_ok=True)
+            
+            # Save to diarization file
+            diarization_path = os.path.join(diarization_dir, f"{guid}_diarization.json")
+            with open(diarization_path, 'w') as f:
+                json.dump({"segments": segments}, f)
+            
+            # Update the transcript file with new speaker assignments
+            transcript_path = os.path.join(UPLOAD_FOLDER, 'transcripts', f"{guid}_transcript.json")
+            if os.path.exists(transcript_path):
+                with open(transcript_path, 'r') as f:
+                    transcript_data = json.load(f)
+                
+                # Update speaker assignments in diarized segments
+                if 'diarized_segments' in transcript_data:
+                    for segment in transcript_data['diarized_segments']:
+                        # Find matching segment from saved diarization
+                        matching_segment = next((s for s in segments if 
+                            abs(s['start'] - segment['start']) < 0.1 and 
+                            abs(s['end'] - segment['end']) < 0.1), None)
+                        if matching_segment:
+                            segment['speaker'] = matching_segment['speaker']
+                
+                # Save updated transcript
+                with open(transcript_path, 'w') as f:
+                    json.dump(transcript_data, f)
+            
+            return {"success": True}
+        except Exception as e:
+            print(f"Error saving diarization: {e}")
+            return {"success": False, "error": str(e)}
 
 def main():
     # Create a webview window without specifying a backend

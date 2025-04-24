@@ -23,6 +23,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                 // Initialize transcript
                 switchTranscriptView('full');
                 
+                // Initialize scoring
+                await initializeScoring();
+                
+                // Initialize diarization
+                await initializeDiarization();
+                
                 // Initialize other components...
             } else {
                 console.error('No GUID provided in URL parameters');
@@ -60,39 +66,67 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
 
     function switchTranscriptView(type) {
+        const diarizedBtn = document.getElementById('diarizedBtn');
+        const fullBtn = document.getElementById('fullBtn');
+        const speakerControls = document.querySelector('.speaker-controls');
+        const saveChangesBtn = document.getElementById('saveChangesBtn');
+        
         if (type === 'diarized') {
             diarizedBtn.classList.add('active');
             fullBtn.classList.remove('active');
+            speakerControls.style.display = 'flex';
             loadDiarizedTranscript();
+            // Reset edit state when switching to diarized view
+            saveChangesBtn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
+            saveChangesBtn.disabled = false;
         } else {
             fullBtn.classList.add('active');
             diarizedBtn.classList.remove('active');
+            speakerControls.style.display = 'none';
             loadFullTranscript();
         }
     }
 
-    function loadDiarizedTranscript() {
+    async function loadDiarizedTranscript() {
+        const transcriptContent = document.getElementById('transcriptContent');
         transcriptContent.innerHTML = '<div class="alert alert-info">Loading diarized transcript...</div>';
-        if (window.pywebview && window.pywebview.api) {
-            const urlParams = new URLSearchParams(window.location.search);
-            const guid = urlParams.get('guid');
-            
-            window.pywebview.api.get_transcript(guid).then(response => {
-                if (response.success && response.data && response.data.diarized_segments) {
-                    displayDiarizedTranscript(response.data.diarized_segments);
+        
+        try {
+            // First try to get the main transcript with diarized segments
+            const response = await window.pywebview.api.get_transcript(window.currentGuid);
+            if (response.success && response.data && response.data.diarized_segments) {
+                // Load any manual speaker assignments
+                const diarizationResponse = await window.pywebview.api.get_diarized_transcript(window.currentGuid);
+                if (diarizationResponse.success && diarizationResponse.data && diarizationResponse.data.segments) {
+                    // Merge manual assignments with original segments
+                    const manualAssignments = diarizationResponse.data.segments;
+                    const segments = response.data.diarized_segments.map(segment => {
+                        // Find matching manual assignment
+                        const manual = manualAssignments.find(m => 
+                            Math.abs(m.start - segment.start) < 0.1 && 
+                            Math.abs(m.end - segment.end) < 0.1
+                        );
+                        if (manual) {
+                            return { ...segment, speaker: manual.speaker };
+                        }
+                        return segment;
+                    });
+                    displayDiarizedTranscript(segments);
                 } else {
-                    transcriptContent.innerHTML = `
-                        <div class="alert alert-danger">
-                            Error loading diarized transcript: ${response.error || 'No diarization data available'}
-                        </div>`;
+                    displayDiarizedTranscript(response.data.diarized_segments);
                 }
-            }).catch(error => {
-                console.error('Error loading diarized transcript:', error);
+            } else {
                 transcriptContent.innerHTML = `
                     <div class="alert alert-danger">
-                        Error loading diarized transcript: ${error}
+                        Error loading diarized transcript: ${response.error || 'No diarization data available'}
                     </div>`;
-            });
+            }
+        } catch (error) {
+            console.error('Error loading diarized transcript:', error);
+            transcriptContent.innerHTML = `
+                <div class="alert alert-danger">
+                    Error loading diarized transcript: ${error}
+                </div>`;
         }
     }
 
@@ -115,30 +149,33 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     function displayDiarizedTranscript(segments) {
+        const transcriptContent = document.getElementById('transcriptContent');
         if (!segments || !segments.length) {
-            console.error("No segments to display in diarized transcript");
+            transcriptContent.innerHTML = `
+                <div class="alert alert-info">
+                    No diarized segments available.
+                </div>
+            `;
             return;
         }
         
-        const transcriptContent = document.getElementById('transcriptContent');
-        if (!transcriptContent) return;
-        
         transcriptContent.innerHTML = segments.map(segment => `
-            <div class="transcript-segment" data-start="${segment.start}" data-end="${segment.end}">
+            <div class="transcript-segment speaker-${segment.speaker}" 
+                 data-start="${segment.start}" 
+                 data-end="${segment.end}">
                 <div class="speaker-label">Speaker ${segment.speaker}</div>
                 <div class="timestamp">${formatTime(segment.start)} - ${formatTime(segment.end)}</div>
                 <div class="text">${segment.text}</div>
             </div>
         `).join('');
 
-        // Add click handlers to jump to video timestamp
+        // Add click handlers to segments
         document.querySelectorAll('.transcript-segment').forEach(segment => {
             segment.addEventListener('click', function() {
                 const startTime = parseFloat(this.dataset.start);
                 const videoPlayer = document.getElementById('videoPlayer');
                 if (videoPlayer) {
-                videoPlayer.currentTime = startTime;
-                videoPlayer.play();
+                    videoPlayer.currentTime = startTime;
                 }
             });
         });
@@ -1434,4 +1471,248 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add event listener for time updates
         videoPlayer.addEventListener('timeupdate', updateOnTimeChange);
     }
-}); 
+});
+
+// Initialize scoring functionality
+async function initializeScoring() {
+    const unlockButton = document.getElementById('unlockScoring');
+    const sliders = document.querySelectorAll('.scoring-slider');
+    const sliderValues = document.querySelectorAll('.slider-value');
+    
+    try {
+        // Load saved scores from backend
+        const response = await window.pywebview.api.get_scores(window.currentGuid);
+        if (response.success) {
+            const savedScores = response.data.scores || {};
+            
+            // Update slider values and display
+            sliders.forEach(slider => {
+                const metric = slider.id;
+                if (savedScores[metric] !== undefined) {
+                    slider.value = savedScores[metric];
+                    slider.nextElementSibling.textContent = `${savedScores[metric]}%`;
+                }
+            });
+        } else {
+            console.error('Error loading scores:', response.error);
+        }
+    } catch (error) {
+        console.error('Error initializing scoring:', error);
+    }
+    
+    // Handle unlock button click
+    unlockButton.addEventListener('click', () => {
+        const isUnlocked = unlockButton.classList.contains('unlocked');
+        
+        if (isUnlocked) {
+            // Lock the sliders
+            unlockButton.classList.remove('unlocked');
+            unlockButton.innerHTML = '<i class="bi bi-lock-fill"></i> Unlock Scoring';
+            sliders.forEach(slider => slider.disabled = true);
+        } else {
+            // Unlock the sliders
+            unlockButton.classList.add('unlocked');
+            unlockButton.innerHTML = '<i class="bi bi-unlock-fill"></i> Lock Scoring';
+            sliders.forEach(slider => slider.disabled = false);
+        }
+    });
+    
+    // Handle slider changes
+    sliders.forEach(slider => {
+        slider.addEventListener('input', async () => {
+            const value = slider.value;
+            const metric = slider.id;
+            const valueDisplay = slider.nextElementSibling;
+            
+            // Update display
+            valueDisplay.textContent = `${value}%`;
+            
+            // Collect all current scores
+            const currentScores = {};
+            sliders.forEach(s => {
+                currentScores[s.id] = parseInt(s.value);
+            });
+            
+            // Save to backend
+            try {
+                const response = await window.pywebview.api.save_scores(window.currentGuid, currentScores);
+                if (!response.success) {
+                    console.error('Error saving scores:', response.error);
+                }
+            } catch (error) {
+                console.error('Error saving scores:', error);
+            }
+        });
+    });
+}
+
+// Initialize diarization functionality
+async function initializeDiarization() {
+    const transcriptContent = document.getElementById('transcriptContent');
+    const saveChangesBtn = document.getElementById('saveChangesBtn');
+    const speakerBtns = document.querySelectorAll('.speaker-btn');
+    let selectedSegments = [];
+    let isEditing = false;
+    
+    try {
+        // Load diarized transcript
+        const response = await window.pywebview.api.get_diarized_transcript(window.currentGuid);
+        if (response.success) {
+            displayDiarizedTranscript(response.data.segments);
+        } else {
+            console.error('Error loading diarized transcript:', response.error);
+            transcriptContent.innerHTML = `
+                <div class="alert alert-danger">
+                    Error loading diarized transcript: ${response.error}
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error initializing diarization:', error);
+        transcriptContent.innerHTML = `
+            <div class="alert alert-danger">
+                Error initializing diarization: ${error}
+            </div>
+        `;
+    }
+    
+    // Handle segment selection
+    transcriptContent.addEventListener('click', (e) => {
+        const segment = e.target.closest('.transcript-segment');
+        if (!segment) return;
+        
+        if (!isEditing) {
+            showMessage('Please unlock editing first', 'info');
+            return;
+        }
+        
+        if (e.ctrlKey || e.metaKey) {
+            // Toggle selection with Ctrl/Cmd
+            segment.classList.toggle('selected');
+            updateSelectedSegments();
+        } else {
+            // Clear previous selections and select only this segment
+            document.querySelectorAll('.transcript-segment.selected').forEach(s => {
+                s.classList.remove('selected');
+            });
+            segment.classList.add('selected');
+            selectedSegments = [segment];
+            updateSaveButton();
+        }
+    });
+    
+    // Handle speaker button clicks
+    speakerBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (!isEditing) {
+                showMessage('Please unlock editing first', 'info');
+                return;
+            }
+            const speaker = btn.dataset.speaker;
+            assignSpeakerToSelected(speaker);
+        });
+    });
+    
+    // Handle keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (!isEditing) return;
+        if (e.key === '1' || e.key === '2') {
+            const speaker = e.key;
+            assignSpeakerToSelected(speaker);
+        }
+    });
+    
+    // Handle save button click
+    saveChangesBtn.addEventListener('click', async () => {
+        if (isEditing) {
+            // Save changes
+            try {
+                const segments = Array.from(document.querySelectorAll('.transcript-segment')).map(segment => ({
+                    start: parseFloat(segment.dataset.start),
+                    end: parseFloat(segment.dataset.end),
+                    speaker: parseInt(segment.classList.contains('speaker-1') ? '1' : '2'),
+                    text: segment.querySelector('.text').textContent
+                }));
+                
+                const response = await window.pywebview.api.save_diarization(window.currentGuid, segments);
+                if (response.success) {
+                    showMessage('Changes saved successfully', 'success');
+                    isEditing = false;
+                    saveChangesBtn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
+                    document.querySelectorAll('.transcript-segment').forEach(segment => {
+                        segment.classList.remove('selected');
+                    });
+                    selectedSegments = [];
+                    updateSaveButton();
+                } else {
+                    showMessage('Error saving changes: ' + response.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error saving diarization:', error);
+                showMessage('Error saving changes', 'error');
+            }
+        } else {
+            // Enable editing
+            isEditing = true;
+            saveChangesBtn.innerHTML = '<i class="bi bi-save"></i> Save Changes';
+        }
+    });
+    
+    function updateSelectedSegments() {
+        selectedSegments = Array.from(document.querySelectorAll('.transcript-segment.selected'));
+        updateSaveButton();
+    }
+    
+    function updateSaveButton() {
+        saveChangesBtn.disabled = !isEditing;
+    }
+    
+    function assignSpeakerToSelected(speaker) {
+        if (selectedSegments.length === 0) return;
+        
+        // Update UI
+        selectedSegments.forEach(segment => {
+            segment.classList.remove('speaker-1', 'speaker-2');
+            segment.classList.add(`speaker-${speaker}`);
+            segment.querySelector('.speaker-label').textContent = `Speaker ${speaker}`;
+        });
+        
+        // Clear selection
+        selectedSegments.forEach(segment => segment.classList.remove('selected'));
+        selectedSegments = [];
+        updateSaveButton();
+    }
+}
+
+function displayDiarizedTranscript(segments) {
+    const transcriptContent = document.getElementById('transcriptContent');
+    if (!segments || !segments.length) {
+        transcriptContent.innerHTML = `
+            <div class="alert alert-info">
+                No diarized segments available.
+            </div>
+        `;
+        return;
+    }
+    
+    transcriptContent.innerHTML = segments.map(segment => `
+        <div class="transcript-segment speaker-${segment.speaker}" 
+             data-start="${segment.start}" 
+             data-end="${segment.end}">
+            <div class="speaker-label">Speaker ${segment.speaker}</div>
+            <div class="timestamp">${formatTime(segment.start)} - ${formatTime(segment.end)}</div>
+            <div class="text">${segment.text}</div>
+        </div>
+    `).join('');
+
+    // Add click handlers to segments
+    document.querySelectorAll('.transcript-segment').forEach(segment => {
+        segment.addEventListener('click', function() {
+            const startTime = parseFloat(this.dataset.start);
+            const videoPlayer = document.getElementById('videoPlayer');
+            if (videoPlayer) {
+                videoPlayer.currentTime = startTime;
+            }
+        });
+    });
+} 
