@@ -51,12 +51,24 @@ class TranscriptionManager:
         # Initialize Whisper model
         self.whisper_model = whisper.load_model(self.model_size)
 
+        # Determine the device
+        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            device = torch.device("mps")
+            logging.info("MPS backend is available. Using MPS.")
+        # Check for CUDA (optional, but good practice if relevant)
+        # elif torch.cuda.is_available():
+        #     device = torch.device("cuda")
+        #     logging.info("CUDA backend is available. Using CUDA.")
+        else:
+            device = torch.device("cpu")
+            logging.info("MPS not available. Using CPU.")
+
         # Initialize Diarization pipeline
         self.diarization_pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             cache_dir=self.model_dir,
             use_auth_token=self.auth_token,
-        ).to(torch.device("mps"))
+        ).to(device) # Use the determined device
 
     def start_transcription(self, file_path, guid, use_diarization=False, model_size=None):
         """Start transcription with specified model"""
