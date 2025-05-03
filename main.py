@@ -13,6 +13,7 @@ import numpy as np
 from pydub import AudioSegment
 import pandas as pd
 import csv
+from scoring import ScoringSystem
 
 # Configure logging
 logging.basicConfig(
@@ -39,6 +40,7 @@ class API:
         self.upload_folder = os.path.join('static', 'uploaded_videos')
         # Initialize with default model
         self.transcription_manager = TranscriptionManager(model_size="base")
+        self.scoring_system = ScoringSystem()
         
     def _save_filename_mapping(self, guid, original_filename):
         """Save mapping between GUID and original filename"""
@@ -558,12 +560,48 @@ class API:
             
             scores_file = os.path.join(scores_dir, f"{guid}_scores.json")
             
-            # Save scores to file
+            # Get existing scores if any
+            existing_scores = {}
+            if os.path.exists(scores_file):
+                with open(scores_file, 'r') as f:
+                    existing_scores = json.load(f)
+            
+            # Initialize structure if not present
+            if 'scores' not in existing_scores:
+                existing_scores['scores'] = {}
+            if 'detailed_metrics' not in existing_scores:
+                existing_scores['detailed_metrics'] = {}
+            
+            # Update scores
+            if 'scores' in scores:
+                for metric, values in scores['scores'].items():
+                    if metric not in existing_scores['scores']:
+                        existing_scores['scores'][metric] = {
+                            'original': values['original'],
+                            'current': values['current']
+                        }
+                    else:
+                        # Only update current value, preserve original
+                        existing_scores['scores'][metric]['current'] = values['current']
+            
+            # Update detailed metrics
+            if 'detailed_metrics' in scores:
+                for metric, values in scores['detailed_metrics'].items():
+                    if metric not in existing_scores['detailed_metrics']:
+                        existing_scores['detailed_metrics'][metric] = {
+                            'original': values['original'],
+                            'current': values['current']
+                        }
+                    else:
+                        # Only update current value, preserve original
+                        existing_scores['detailed_metrics'][metric]['current'] = values['current']
+            
+            # Update timestamp
+            existing_scores['timestamp'] = str(datetime.datetime.now())
+            
+            # Save updated scores
             with open(scores_file, 'w') as f:
-                json.dump({
-                    'scores': scores,
-                    'timestamp': str(datetime.datetime.now())
-                }, f, indent=2)
+                json.dump(existing_scores, f, indent=2)
             
             logging.info(f"Saved scores for {guid}")
             return {"success": True}
@@ -579,9 +617,59 @@ class API:
                 with open(scores_file, 'r') as f:
                     data = json.load(f)
                     return {"success": True, "data": data}
-            return {"success": True, "data": {'scores': {}}}
+            return {"success": True, "data": {
+                'scores': {},
+                'detailed_metrics': {},
+                'timestamp': str(datetime.datetime.now())
+            }}
         except Exception as e:
             logging.error(f"Error getting scores: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def calculate_scores(self, guid):
+        """Calculate all scores for a video"""
+        try:
+            # Get the audio file path
+            mapping_file = os.path.join(UPLOAD_FOLDER, 'filename_mapping.json')
+            if os.path.exists(mapping_file):
+                with open(mapping_file, 'r') as f:
+                    mapping = json.load(f)
+                    if guid in mapping:
+                        original_filename = mapping[guid]['original_filename']
+                        extension = os.path.splitext(original_filename)[1]
+                        audio_path = os.path.join(UPLOAD_FOLDER, f"{guid}{extension}")
+                        
+                        # Get diarization data
+                        diarization_path = os.path.join(UPLOAD_FOLDER, 'diarization', f"{guid}_diarization.json")
+                        if os.path.exists(diarization_path):
+                            with open(diarization_path, 'r') as f:
+                                diarization_data = json.load(f)['segments']
+                        else:
+                            diarization_data = []
+                        
+                        # Get HR data
+                        hr_path = os.path.join(UPLOAD_FOLDER, 'hr_data', f"{guid}_hr.csv")
+                        hr_data = []
+                        if os.path.exists(hr_path):
+                            df = pd.read_csv(hr_path)
+                            hr_data = df.to_dict('records')
+                        
+                        # Calculate all scores
+                        scores = self.scoring_system.calculate_all_scores(
+                            guid,
+                            audio_path,
+                            diarization_data,
+                            hr_data
+                        )
+                        
+                        # Save the calculated scores
+                        self.save_scores(guid, scores)
+                        
+                        return {"success": True, "data": scores}
+            
+            return {"success": False, "error": "Video data not found"}
+        except Exception as e:
+            logging.error(f"Error calculating scores: {str(e)}")
             return {"success": False, "error": str(e)}
 
     def delete_hr_data(self, guid):
@@ -637,6 +725,35 @@ class API:
             return {"success": True}
         except Exception as e:
             print(f"Error saving diarization: {e}")
+            return {"success": False, "error": str(e)}
+
+    def save_notes(self, guid, notes):
+        """Save notes for a video"""
+        try:
+            notes_dir = os.path.join(UPLOAD_FOLDER, 'notes')
+            os.makedirs(notes_dir, exist_ok=True)
+            
+            notes_file = os.path.join(notes_dir, f"{guid}_notes.txt")
+            with open(notes_file, 'w') as f:
+                f.write(notes)
+            
+            logging.info(f"Saved notes for {guid}")
+            return {"success": True}
+        except Exception as e:
+            logging.error(f"Error saving notes: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def get_notes(self, guid):
+        """Get notes for a video"""
+        try:
+            notes_file = os.path.join(UPLOAD_FOLDER, 'notes', f"{guid}_notes.txt")
+            if os.path.exists(notes_file):
+                with open(notes_file, 'r') as f:
+                    notes = f.read()
+                    return {"success": True, "data": notes}
+            return {"success": True, "data": ""}
+        except Exception as e:
+            logging.error(f"Error getting notes: {str(e)}")
             return {"success": False, "error": str(e)}
 
 def main():

@@ -7,3 +7,5 @@ opencv-python-headless
 moviepy
 onnx
 onnxruntime
+librosa
+pandas

@@ -155,6 +155,46 @@
         .segment-text {
             line-height: 1.5;
         }
+
+        .metric-item {
+            margin-bottom: 15px;
+        }
+        
+        .metric-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .metric-value {
+            font-weight: bold;
+            color: #0056b3;
+        }
+        
+        .metric-group-header {
+            color: #495057;
+            font-weight: 600;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .metric-group-header:first-child {
+            margin-top: 0;
+        }
+        
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .slider-value {
+            font-size: 0.9em;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -181,12 +221,6 @@
                     <li class="nav-item">
                         <a class="nav-link" data-bs-toggle="tab" href="#notes">Notes</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" data-bs-toggle="tab" href="#summary">Summary</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" data-bs-toggle="tab" href="#diarization" role="tab" aria-controls="diarization" aria-selected="false">Diarization</a>
-                    </li>
                 </ul>
                 <div class="tab-content">
                     <div class="tab-pane fade show active" id="scoring">
@@ -198,32 +232,81 @@
                                 </button>
                             </div>
                             <div class="scoring-metrics">
+                                <h6 class="metric-group-header">Verbal Interaction Metrics</h6>
                                 <div class="metric-item">
+                                    <div class="metric-header">
+                                        <label for="turnBalanceScore">Turn Balance</label>
+                                        <span class="metric-value">0%</span>
+                                    </div>
+                                    <div class="slider-container">
+                                        <input type="range" class="form-range scoring-slider" id="turnBalanceScore" min="0" max="100" value="0" disabled>
+                                        <span class="slider-value">No data available</span>
+                                    </div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-header">
                                     <label for="engagementScore">Engagement</label>
+                                        <span class="metric-value">0%</span>
+                                    </div>
                                     <div class="slider-container">
                                         <input type="range" class="form-range scoring-slider" id="engagementScore" min="0" max="100" value="0" disabled>
-                                        <span class="slider-value">0%</span>
+                                        <span class="slider-value">No data available</span>
+                                    </div>
+                                </div>
+
+                                <h6 class="metric-group-header">Speech Quality Metrics</h6>
+                                <div class="metric-item">
+                                    <div class="metric-header">
+                                        <label for="pitchVariationScore">Pitch Variation</label>
+                                        <span class="metric-value">0%</span>
+                                    </div>
+                                    <div class="slider-container">
+                                        <input type="range" class="form-range scoring-slider" id="pitchVariationScore" min="0" max="100" value="0" disabled>
+                                        <span class="slider-value">No data available</span>
                                     </div>
                                 </div>
                                 <div class="metric-item">
+                                    <div class="metric-header">
+                                        <label for="speechRateConsistencyScore">Speech Rate Consistency</label>
+                                        <span class="metric-value">0%</span>
+                                    </div>
+                                    <div class="slider-container">
+                                        <input type="range" class="form-range scoring-slider" id="speechRateConsistencyScore" min="0" max="100" value="0" disabled>
+                                        <span class="slider-value">No data available</span>
+                                    </div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-header">
                                     <label for="clarityScore">Clarity</label>
+                                        <span class="metric-value">0%</span>
+                                    </div>
                                     <div class="slider-container">
                                         <input type="range" class="form-range scoring-slider" id="clarityScore" min="0" max="100" value="0" disabled>
-                                        <span class="slider-value">0%</span>
+                                        <span class="slider-value">No data available</span>
                                     </div>
                                 </div>
+
+                                <h6 class="metric-group-header">Physiological Metrics</h6>
                                 <div class="metric-item">
-                                    <label for="interactionScore">Interaction</label>
+                                    <div class="metric-header">
+                                        <label for="heartRateStabilityScore">Heart Rate Stability</label>
+                                        <span class="metric-value">0%</span>
+                                    </div>
                                     <div class="slider-container">
-                                        <input type="range" class="form-range scoring-slider" id="interactionScore" min="0" max="100" value="0" disabled>
-                                        <span class="slider-value">0%</span>
+                                        <input type="range" class="form-range scoring-slider" id="heartRateStabilityScore" min="0" max="100" value="0" disabled>
+                                        <span class="slider-value">No data available</span>
                                     </div>
                                 </div>
+
+                                <h6 class="metric-group-header">Timing Metrics</h6>
                                 <div class="metric-item">
-                                    <label for="effectivenessScore">Effectiveness</label>
+                                    <div class="metric-header">
+                                        <label for="silenceRatioScore">Silence Ratio</label>
+                                        <span class="metric-value">0%</span>
+                                    </div>
                                     <div class="slider-container">
-                                        <input type="range" class="form-range scoring-slider" id="effectivenessScore" min="0" max="100" value="0" disabled>
-                                        <span class="slider-value">0%</span>
+                                        <input type="range" class="form-range scoring-slider" id="silenceRatioScore" min="0" max="100" value="0" disabled>
+                                        <span class="slider-value">No data available</span>
                                     </div>
                                 </div>
                             </div>
@@ -291,16 +374,6 @@
                     <div class="tab-pane fade" id="notes">
                         <div class="p-3">
                             <textarea class="form-control" rows="10" placeholder="Add your notes here..."></textarea>
-                        </div>
-                    </div>
-                    <div class="tab-pane fade" id="summary">
-                        <div class="p-3">
-                            <!-- Summary content will go here -->
-                        </div>
-                    </div>
-                    <div class="tab-pane fade" id="diarization" role="tabpanel" aria-labelledby="diarization-tab">
-                        <div class="p-3">
-                            <!-- Diarization content will be shown in the transcript section -->
                         </div>
                     </div>
                 </div>

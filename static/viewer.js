@@ -21,15 +21,19 @@ document.addEventListener('DOMContentLoaded', async function() {
                 await initializeHRDataHandling(guid);
                 
                 // Initialize transcript
-                switchTranscriptView('full');
+                await switchTranscriptView('full');
                 
-                // Initialize scoring
+                // Initialize diarization if selected
+                const diarizedBtn = document.getElementById('diarizedBtn');
+                if (diarizedBtn && diarizedBtn.classList.contains('active')) {
+                    await initializeDiarization();
+                }
+                
+                // Initialize scoring after transcript/diarization
                 await initializeScoring();
                 
-                // Initialize diarization
-                await initializeDiarization();
-                
-                // Initialize other components...
+                // Initialize notes
+                await initializeNotes();
             } else {
                 console.error('No GUID provided in URL parameters');
                 showMessage('Error: No video ID found', 'error');
@@ -169,7 +173,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             </div>
         `).join('');
 
-        // Add click handlers to segments
+        // Add click handlers to segments - only seek, don't play
         document.querySelectorAll('.transcript-segment').forEach(segment => {
             segment.addEventListener('click', function() {
                 const startTime = parseFloat(this.dataset.start);
@@ -228,12 +232,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 <div class="segment-text">${segment.text}</div>
             `;
 
-            // Add click handler to jump to timestamp
+            // Add click handler to jump to timestamp without playing
             segmentDiv.addEventListener('click', () => {
                 const videoPlayer = document.getElementById('videoPlayer');
                 if (videoPlayer) {
-                videoPlayer.currentTime = startTime;
-                videoPlayer.play();
+                    videoPlayer.currentTime = startTime;
                 }
             });
 
@@ -242,8 +245,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         const transcriptContent = document.getElementById('transcriptContent');
         if (transcriptContent) {
-        transcriptContent.innerHTML = '';
-        transcriptContent.appendChild(container);
+            transcriptContent.innerHTML = '';
+            transcriptContent.appendChild(container);
         }
     }
 
@@ -1001,11 +1004,10 @@ function createHeartRateCharts(data) {
                 
                 const timeInSeconds = labels[closestTimeIndex];
                 
-                // Seek the video to this time
+                // Seek the video to this time but don't play
                 const videoPlayer = document.getElementById('videoPlayer');
                 if (videoPlayer) {
                     videoPlayer.currentTime = timeInSeconds;
-                    videoPlayer.play();
                 }
             }
         },
@@ -1477,20 +1479,70 @@ document.addEventListener('DOMContentLoaded', function() {
 async function initializeScoring() {
     const unlockButton = document.getElementById('unlockScoring');
     const sliders = document.querySelectorAll('.scoring-slider');
-    const sliderValues = document.querySelectorAll('.slider-value');
     
     try {
-        // Load saved scores from backend
+        // Load saved scores and metrics from backend
         const response = await window.pywebview.api.get_scores(window.currentGuid);
         if (response.success) {
             const savedScores = response.data.scores || {};
+            const detailedMetrics = response.data.detailed_metrics || {};
             
             // Update slider values and display
             sliders.forEach(slider => {
-                const metric = slider.id;
-                if (savedScores[metric] !== undefined) {
-                    slider.value = savedScores[metric];
-                    slider.nextElementSibling.textContent = `${savedScores[metric]}%`;
+                const metric = slider.id.replace('Score', '');
+                const metricValue = slider.closest('.metric-item').querySelector('.metric-value');
+                const valueDisplay = slider.nextElementSibling;
+                
+                // Set default value if no saved score
+                slider.value = savedScores[metric]?.current || 0;
+                metricValue.textContent = `${slider.value}%`;
+                
+                // Format display based on metric type
+                switch(metric) {
+                    case 'turn_balance':
+                        const turnMetrics = detailedMetrics.verbal_metrics?.current || {};
+                        const turnScore = calculateTurnBalanceScore(turnMetrics);
+                        slider.value = turnScore;
+                        metricValue.textContent = `Turns: ${turnMetrics.turn_count || 'No data'}, Avg Duration: ${turnMetrics.avg_turn_duration?.toFixed(1) || 'No data'}s`;
+                        break;
+                    case 'heart_rate_stability':
+                        const hrMetrics = detailedMetrics.heart_rate_metrics?.current || {};
+                        const hrScore = calculateHRStabilityScore(hrMetrics);
+                        slider.value = hrScore;
+                        metricValue.textContent = `HR Variability: ${hrMetrics.hr_variability?.toFixed(1) || 'No data'} BPM, Avg HR: ${hrMetrics.avg_hr?.toFixed(0) || 'No data'} BPM`;
+                        break;
+                    case 'pitch_variation':
+                        const pitchRanges = detailedMetrics.pitch_ranges?.current || {};
+                        const pitchScore = calculatePitchVariationScore(pitchRanges);
+                        slider.value = pitchScore;
+                        metricValue.textContent = `Avg Pitch Range: ${avgPitchRange?.toFixed(1) || 'No data'} Hz, Speakers: ${Object.keys(pitchRanges).length || 'No data'}`;
+                        break;
+                    case 'speech_rate_consistency':
+                        const speechRates = detailedMetrics.speech_rates?.current || {};
+                        const speechScore = calculateSpeechRateScore(speechRates);
+                        slider.value = speechScore;
+                        metricValue.textContent = `Avg Speech Rate: ${avgSpeechRate?.toFixed(1) || 'No data'} WPM, Speakers: ${Object.keys(speechRates).length || 'No data'}`;
+                        break;
+                    case 'silence_ratio':
+                        const silenceMetrics = detailedMetrics.silence_metrics?.current || {};
+                        const silenceScore = calculateSilenceRatioScore(silenceMetrics);
+                        slider.value = silenceScore;
+                        metricValue.textContent = `Silence Ratio: ${(silenceMetrics.silence_ratio * 100)?.toFixed(1) || 'No data'}%, Total Silence: ${silenceMetrics.total_silence?.toFixed(1) || 'No data'}s`;
+                        break;
+                    case 'engagement':
+                        const engagementMetrics = detailedMetrics.verbal_metrics?.current || {};
+                        const engagementScore = calculateEngagementScore(engagementMetrics);
+                        slider.value = engagementScore;
+                        metricValue.textContent = `Interactions: ${engagementMetrics.interaction_count || 'No data'}, Avg Duration: ${engagementMetrics.avg_interaction_duration?.toFixed(1) || 'No data'}s`;
+                        break;
+                    case 'clarity':
+                        const clarityMetrics = detailedMetrics.silence_metrics?.current || {};
+                        const clarityScore = calculateClarityScore(clarityMetrics);
+                        slider.value = clarityScore;
+                        metricValue.textContent = `Pauses: ${clarityMetrics.pause_count || 'No data'}, Avg Pause: ${clarityMetrics.avg_pause_duration?.toFixed(1) || 'No data'}s`;
+                        break;
+                    default:
+                        valueDisplay.textContent = 'No data available';
                 }
             });
         } else {
@@ -1521,21 +1573,29 @@ async function initializeScoring() {
     sliders.forEach(slider => {
         slider.addEventListener('input', async () => {
             const value = slider.value;
-            const metric = slider.id;
-            const valueDisplay = slider.nextElementSibling;
+            const metric = slider.id.replace('Score', '');
+            const metricValue = slider.closest('.metric-item').querySelector('.metric-value');
             
-            // Update display
-            valueDisplay.textContent = `${value}%`;
+            // Update the metric value display
+            metricValue.textContent = `${value}%`;
             
             // Collect all current scores
-            const currentScores = {};
+            const scores = {
+                scores: {},
+                detailed_metrics: {}
+            };
+            
             sliders.forEach(s => {
-                currentScores[s.id] = parseInt(s.value);
+                const m = s.id.replace('Score', '');
+                scores.scores[m] = {
+                    current: parseInt(s.value),
+                    original: parseInt(s.value)
+                };
             });
             
             // Save to backend
             try {
-                const response = await window.pywebview.api.save_scores(window.currentGuid, currentScores);
+                const response = await window.pywebview.api.save_scores(window.currentGuid, scores);
                 if (!response.success) {
                     console.error('Error saving scores:', response.error);
                 }
@@ -1544,6 +1604,63 @@ async function initializeScoring() {
             }
         });
     });
+}
+
+// Scoring calculation functions
+function calculateTurnBalanceScore(metrics) {
+    if (!metrics || !metrics.turn_count || !metrics.avg_turn_duration) return 0;
+    // Score based on balanced turn count and duration
+    const turnCountScore = Math.min(metrics.turn_count * 2, 50); // Max 50 points for turns
+    const durationScore = Math.min(metrics.avg_turn_duration * 5, 50); // Max 50 points for duration
+    return Math.round((turnCountScore + durationScore) / 2);
+}
+
+function calculateHRStabilityScore(metrics) {
+    if (!metrics || !metrics.hr_variability || !metrics.avg_hr) return 0;
+    // Score based on HR variability (lower is better) and average HR
+    const variabilityScore = Math.max(0, 100 - (metrics.hr_variability * 2));
+    return Math.round(variabilityScore);
+}
+
+function calculatePitchVariationScore(pitchRanges) {
+    if (!pitchRanges || Object.keys(pitchRanges).length === 0) return 0;
+    // Score based on average pitch range
+    const avgPitchRange = Object.values(pitchRanges).reduce((a, b) => a + b, 0) / Object.keys(pitchRanges).length;
+    return Math.round(Math.min(avgPitchRange * 2, 100));
+}
+
+function calculateSpeechRateScore(speechRates) {
+    if (!speechRates || Object.keys(speechRates).length === 0) return 0;
+    // Score based on consistency of speech rates
+    const rates = Object.values(speechRates);
+    const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
+    const variance = rates.reduce((a, b) => a + Math.pow(b - avgRate, 2), 0) / rates.length;
+    return Math.round(Math.max(0, 100 - (variance * 10)));
+}
+
+function calculateSilenceRatioScore(metrics) {
+    if (!metrics || !metrics.silence_ratio) return 0;
+    // Score based on optimal silence ratio (around 20-30%)
+    const ratio = metrics.silence_ratio * 100;
+    const optimalRange = 25; // Target silence ratio
+    const score = 100 - Math.abs(ratio - optimalRange) * 2;
+    return Math.round(Math.max(0, score));
+}
+
+function calculateEngagementScore(metrics) {
+    if (!metrics || !metrics.interaction_count || !metrics.avg_interaction_duration) return 0;
+    // Score based on interaction count and duration
+    const countScore = Math.min(metrics.interaction_count * 5, 50);
+    const durationScore = Math.min(metrics.avg_interaction_duration * 10, 50);
+    return Math.round((countScore + durationScore) / 2);
+}
+
+function calculateClarityScore(metrics) {
+    if (!metrics || !metrics.pause_count || !metrics.avg_pause_duration) return 0;
+    // Score based on optimal pause count and duration
+    const pauseCountScore = Math.min(metrics.pause_count * 2, 50);
+    const durationScore = Math.min(metrics.avg_pause_duration * 10, 50);
+    return Math.round((pauseCountScore + durationScore) / 2);
 }
 
 // Initialize diarization functionality
@@ -1684,35 +1801,63 @@ async function initializeDiarization() {
     }
 }
 
-function displayDiarizedTranscript(segments) {
-    const transcriptContent = document.getElementById('transcriptContent');
-    if (!segments || !segments.length) {
-        transcriptContent.innerHTML = `
-            <div class="alert alert-info">
-                No diarized segments available.
-            </div>
-        `;
-        return;
+// Initialize notes functionality
+async function initializeNotes() {
+    const notesTextarea = document.querySelector('#notes textarea');
+    
+    try {
+        // Load saved notes
+        const response = await window.pywebview.api.get_notes(window.currentGuid);
+        if (response.success) {
+            notesTextarea.value = response.data;
+        }
+    } catch (error) {
+        console.error('Error loading notes:', error);
     }
     
-    transcriptContent.innerHTML = segments.map(segment => `
-        <div class="transcript-segment speaker-${segment.speaker}" 
-             data-start="${segment.start}" 
-             data-end="${segment.end}">
-            <div class="speaker-label">Speaker ${segment.speaker}</div>
-            <div class="timestamp">${formatTime(segment.start)} - ${formatTime(segment.end)}</div>
-            <div class="text">${segment.text}</div>
-        </div>
-    `).join('');
-
-    // Add click handlers to segments
-    document.querySelectorAll('.transcript-segment').forEach(segment => {
-        segment.addEventListener('click', function() {
-            const startTime = parseFloat(this.dataset.start);
-            const videoPlayer = document.getElementById('videoPlayer');
-            if (videoPlayer) {
-                videoPlayer.currentTime = startTime;
+    // Add event listener for notes changes
+    notesTextarea.addEventListener('input', debounce(async function() {
+        try {
+            const response = await window.pywebview.api.save_notes(window.currentGuid, this.value);
+            if (!response.success) {
+                console.error('Error saving notes:', response.error);
             }
-        });
-    });
-} 
+        } catch (error) {
+            console.error('Error saving notes:', error);
+        }
+    }, 1000));
+}
+
+// Debounce function to limit API calls
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Remove diarization and summary pages from analysis section
+document.addEventListener('DOMContentLoaded', function() {
+    // Remove diarization and summary tabs
+    const analysisTabs = document.querySelector('.nav-tabs');
+    if (analysisTabs) {
+        const diarizationTab = analysisTabs.querySelector('a[href="#diarization"]');
+        const summaryTab = analysisTabs.querySelector('a[href="#summary"]');
+        if (diarizationTab) diarizationTab.parentElement.remove();
+        if (summaryTab) summaryTab.parentElement.remove();
+    }
+
+    // Remove diarization and summary content
+    const analysisContent = document.querySelector('.tab-content');
+    if (analysisContent) {
+        const diarizationContent = analysisContent.querySelector('#diarization');
+        const summaryContent = analysisContent.querySelector('#summary');
+        if (diarizationContent) diarizationContent.remove();
+        if (summaryContent) summaryContent.remove();
+    }
+}); 
