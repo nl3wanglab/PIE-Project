@@ -51,14 +51,12 @@ class TranscriptionManager:
         # Initialize Whisper model
         self.whisper_model = whisper.load_model(self.model_size)
 
-        # Determine the device
         if torch.backends.mps.is_available() and torch.backends.mps.is_built():
             device = torch.device("mps")
             logging.info("MPS backend is available. Using MPS.")
-        # Check for CUDA (optional, but good practice if relevant)
-        # elif torch.cuda.is_available():
-        #     device = torch.device("cuda")
-        #     logging.info("CUDA backend is available. Using CUDA.")
+        elif torch.cuda.is_available():
+            device = torch.device("cuda")
+            logging.info("CUDA backend is available. Using CUDA.")
         else:
             device = torch.device("cpu")
             logging.info("MPS not available. Using CPU.")
