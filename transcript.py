@@ -56,7 +56,7 @@ class TranscriptionManager:
             "pyannote/speaker-diarization-3.1",
             cache_dir=self.model_dir,
             use_auth_token=self.auth_token,
-        )
+        ).to(torch.device("mps"))
 
     def start_transcription(self, file_path, guid, use_diarization=False, model_size=None):
         """Start transcription with specified model"""
