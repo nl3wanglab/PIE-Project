@@ -276,37 +276,22 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (currentTime >= start && currentTime <= end) {
                 activeSegmentFound = true;
                 
-                // Always update scroll position based on progress within segment
-                const segmentDuration = end - start;
-                const progress = (currentTime - start) / segmentDuration;
-                
-                // Get segment dimensions
-                const segmentRect = segment.getBoundingClientRect();
-                const containerRect = transcriptContent.getBoundingClientRect();
-                
-                // Calculate the target scroll position
-                const segmentTop = segment.offsetTop;
-                const containerHeight = transcriptContent.clientHeight;
-                
-                // Calculate progressive scroll position
-                // Start with segment at 33% from top when it begins
-                // End with segment at 66% from top when it ends
-                const startOffset = containerHeight * 0.33;
-                const endOffset = containerHeight * 0.66;
-                const scrollOffset = startOffset + (endOffset - startOffset) * progress;
-                
-                const targetScrollTop = segmentTop - scrollOffset;
-                
-                // Smooth scroll to position
-                transcriptContent.scrollTo({
-                    top: targetScrollTop,
-                    behavior: 'auto'
-                });
-                
-                // Handle highlighting
+                // Only update scroll position if this is a new active segment
                 if (!segment.classList.contains('current-segment')) {
+                    // Remove highlight from all segments
                     segments.forEach(s => s.classList.remove('current-segment'));
                     segment.classList.add('current-segment');
+                    
+                    // Calculate the target scroll position
+                    const segmentTop = segment.offsetTop;
+                    const containerHeight = transcriptContent.clientHeight;
+                    const targetScrollTop = segmentTop - (containerHeight / 2);
+                    
+                    // Smooth scroll to position
+                    transcriptContent.scrollTo({
+                        top: targetScrollTop,
+                        behavior: 'smooth'
+                    });
                 }
             } else if (!activeSegmentFound) {
                 segment.classList.remove('current-segment');
