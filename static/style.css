@@ -454,15 +454,46 @@ h1 {
     gap: 20px;
 }
 
+.metric-group-header {
+    color: #495057;
+    font-weight: 600;
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e9ecef;
+}
+
 .metric-item {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    transition: all 0.2s ease;
 }
 
-.metric-item label {
+.metric-item:hover {
+    background: #e9ecef;
+}
+
+.metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-header label {
     font-weight: 500;
     color: #333;
+    margin: 0;
+    cursor: help;
+}
+
+.metric-value {
+    font-weight: 600;
+    color: #0d6efd;
+    min-width: 60px;
+    text-align: right;
 }
 
 .slider-container {
@@ -478,6 +509,7 @@ h1 {
     background: #e9ecef;
     -webkit-appearance: none;
     appearance: none;
+    transition: all 0.2s ease;
 }
 
 .scoring-slider::-webkit-slider-thumb {
@@ -486,18 +518,20 @@ h1 {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #007bff;
+    background: #0d6efd;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .scoring-slider::-moz-range-thumb {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #007bff;
+    background: #0d6efd;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .scoring-slider:disabled {
@@ -514,9 +548,10 @@ h1 {
 }
 
 .slider-value {
-    min-width: 40px;
+    min-width: 200px;
     text-align: right;
     color: #6c757d;
+    font-size: 0.9em;
 }
 
 #unlockScoring {
@@ -525,7 +560,13 @@ h1 {
     gap: 8px;
     padding: 8px 16px;
     border-radius: 4px;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+}
+
+#unlockScoring:hover {
+    background: #e9ecef;
 }
 
 #unlockScoring.unlocked {
@@ -534,12 +575,29 @@ h1 {
     border-color: #28a745;
 }
 
+#unlockScoring.unlocked:hover {
+    background-color: #218838;
+}
+
 #unlockScoring.unlocked i {
     transform: rotate(180deg);
 }
 
 #unlockScoring i {
-    transition: transform 0.3s;
+    transition: transform 0.3s ease;
+}
+
+/* Tooltip styles */
+.tooltip {
+    font-size: 0.9em;
+}
+
+.tooltip-inner {
+    max-width: 300px;
+    padding: 8px 12px;
+    background-color: #495057;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 /* Diarization styles */
@@ -606,4 +664,84 @@ h1 {
     font-size: 0.8rem;
     color: #6c757d;
     margin-left: 0.5rem;
+}
+
+/* Detailed Metrics Styles */
+.detailed-metrics {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.metric-group {
+    margin-bottom: 25px;
+}
+
+.metric-group:last-child {
+    margin-bottom: 0;
+}
+
+.metric-details {
+    background: #f8f9fa;
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 8px;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.detail-item:last-child {
+    border-bottom: none;
+}
+
+.detail-label {
+    color: #495057;
+    font-weight: 500;
+}
+
+.detail-value {
+    color: #0d6efd;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+/* Update existing metric-item styles for detailed view */
+.metric-item {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+    transition: all 0.2s ease;
+}
+
+.metric-item:hover {
+    border-color: #dee2e6;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.metric-header {
+    margin-bottom: 10px;
+}
+
+/* Update chart container styles */
+.chart-container {
+    margin-bottom: 30px;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 300px !important;
 } 

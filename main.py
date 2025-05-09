@@ -38,8 +38,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 class API:
     def __init__(self):
         self.upload_folder = os.path.join('static', 'uploaded_videos')
-        # Initialize with default model
-        self.transcription_manager = TranscriptionManager(model_size="base")
+        # Initialize without default model - will be set on first use
+        self.transcription_manager = TranscriptionManager()
         self.scoring_system = ScoringSystem()
         
     def _save_filename_mapping(self, guid, original_filename):
@@ -159,7 +159,7 @@ class API:
             # Store filename mapping
             self._save_filename_mapping(file_guid, filename)
             
-            # Start transcription immediately with specified model
+            # Start transcription with specified model
             self.transcription_manager.start_transcription(
                 file_path, 
                 file_guid, 

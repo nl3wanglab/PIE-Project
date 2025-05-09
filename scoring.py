@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple, Optional
 import json
 import os
 import datetime
+import logging
 
 class ScoringSystem:
     def __init__(self):
@@ -153,9 +154,17 @@ class ScoringSystem:
             'avg_silence': np.mean(silences) if silences else 0
         }
     
-    def calculate_all_scores(self, audio_path, transcript_path, heart_rate_data=None):
+    def calculate_all_scores(self, guid: str, audio_path: str, diarization_data: List[Dict], heart_rate_data: Optional[List[Dict]] = None) -> Dict:
         """Calculate all scores and return them in a format suitable for the UI"""
         try:
+            # Validate inputs
+            if not os.path.exists(audio_path):
+                raise FileNotFoundError(f"Audio file not found: {audio_path}")
+            
+            if not diarization_data:
+                logging.warning(f"No diarization data available for {guid}")
+                diarization_data = []
+            
             # Calculate all metrics
             heart_rate_metrics = self.calculate_hr_metrics(heart_rate_data) if heart_rate_data else None
             verbal_metrics = self.calculate_verbal_engagement(diarization_data)
@@ -163,55 +172,77 @@ class ScoringSystem:
             speech_rates = self.calculate_speech_rate(diarization_data)
             silence_metrics = self.calculate_silence_metrics(diarization_data)
             
-            # Format scores for UI
+            # Format scores for UI with better normalization
             scores = {
                 'turn_balance': {
                     'current': int(verbal_metrics * 100),
-                    'original': int(verbal_metrics * 100)
+                    'original': int(verbal_metrics * 100),
+                    'label': 'Turn Balance',
+                    'description': 'Measures the balance of speaking time between participants'
                 },
                 'heart_rate_stability': {
                     'current': int((1 - min(heart_rate_metrics['hr_variability'] / 20, 1)) * 100) if heart_rate_metrics else 0,
-                    'original': int((1 - min(heart_rate_metrics['hr_variability'] / 20, 1)) * 100) if heart_rate_metrics else 0
+                    'original': int((1 - min(heart_rate_metrics['hr_variability'] / 20, 1)) * 100) if heart_rate_metrics else 0,
+                    'label': 'Heart Rate Stability',
+                    'description': 'Measures the consistency of heart rate during the session'
                 },
                 'pitch_variation': {
                     'current': int((1 - min(max(pitch_ranges.values()) / 500, 1)) * 100) if pitch_ranges else 50,
-                    'original': int((1 - min(max(pitch_ranges.values()) / 500, 1)) * 100) if pitch_ranges else 50
+                    'original': int((1 - min(max(pitch_ranges.values()) / 500, 1)) * 100) if pitch_ranges else 50,
+                    'label': 'Pitch Variation',
+                    'description': 'Measures the natural variation in voice pitch'
                 },
                 'speech_rate_consistency': {
                     'current': int((1 - min(max(speech_rates.values()) / 300, 1)) * 100) if speech_rates else 50,
-                    'original': int((1 - min(max(speech_rates.values()) / 300, 1)) * 100) if speech_rates else 50
+                    'original': int((1 - min(max(speech_rates.values()) / 300, 1)) * 100) if speech_rates else 50,
+                    'label': 'Speech Rate Consistency',
+                    'description': 'Measures the consistency of speaking pace'
                 },
                 'silence_ratio': {
                     'current': int((1 - silence_metrics['silence_ratio']) * 100),
-                    'original': int((1 - silence_metrics['silence_ratio']) * 100)
+                    'original': int((1 - silence_metrics['silence_ratio']) * 100),
+                    'label': 'Silence Ratio',
+                    'description': 'Measures the appropriate use of pauses and silence'
                 },
                 'engagement': {
                     'current': int(verbal_metrics * 100),
-                    'original': int(verbal_metrics * 100)
+                    'original': int(verbal_metrics * 100),
+                    'label': 'Engagement',
+                    'description': 'Measures overall participant engagement'
                 },
                 'clarity': {
                     'current': int((1 - min(silence_metrics['silence_ratio'], 0.5)) * 100),
-                    'original': int((1 - min(silence_metrics['silence_ratio'], 0.5)) * 100)
+                    'original': int((1 - min(silence_metrics['silence_ratio'], 0.5)) * 100),
+                    'label': 'Clarity',
+                    'description': 'Measures the clarity of communication'
                 }
             }
             
-            # Include detailed metrics for UI display
+            # Include detailed metrics for UI display with better formatting
             detailed_metrics = {
                 'heart_rate_metrics': {
                     'current': heart_rate_metrics if heart_rate_metrics else {},
-                    'original': heart_rate_metrics if heart_rate_metrics else {}
+                    'original': heart_rate_metrics if heart_rate_metrics else {},
+                    'label': 'Heart Rate Analysis',
+                    'description': 'Detailed heart rate measurements and analysis'
                 },
                 'pitch_ranges': {
                     'current': pitch_ranges,
-                    'original': pitch_ranges
+                    'original': pitch_ranges,
+                    'label': 'Pitch Analysis',
+                    'description': 'Detailed voice pitch measurements by speaker'
                 },
                 'speech_rates': {
                     'current': speech_rates,
-                    'original': speech_rates
+                    'original': speech_rates,
+                    'label': 'Speech Rate Analysis',
+                    'description': 'Detailed speech rate measurements by speaker'
                 },
                 'silence_metrics': {
                     'current': silence_metrics,
-                    'original': silence_metrics
+                    'original': silence_metrics,
+                    'label': 'Silence Analysis',
+                    'description': 'Detailed analysis of pauses and silence'
                 }
             }
             
@@ -219,10 +250,12 @@ class ScoringSystem:
                 'success': True,
                 'data': {
                     'scores': scores,
-                    'detailed_metrics': detailed_metrics
+                    'detailed_metrics': detailed_metrics,
+                    'timestamp': str(datetime.datetime.now())
                 }
             }
         except Exception as e:
+            logging.error(f"Error calculating scores: {str(e)}")
             return {
                 'success': False,
                 'error': str(e)

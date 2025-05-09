@@ -48,37 +48,54 @@ class TranscriptionManager:
         self.model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
         os.makedirs(self.model_dir, exist_ok=True)
 
-        # Initialize Whisper model
-        self.whisper_model = whisper.load_model(self.model_size)
-
+        # Initialize device
         if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-            device = torch.device("mps")
+            self.device = torch.device("mps")
             logging.info("MPS backend is available. Using MPS.")
         elif torch.cuda.is_available():
-            device = torch.device("cuda")
+            self.device = torch.device("cuda")
             logging.info("CUDA backend is available. Using CUDA.")
         else:
-            device = torch.device("cpu")
-            logging.info("MPS not available. Using CPU.")
+            self.device = torch.device("cpu")
+            logging.info("Using CPU for processing.")
+
+        # Initialize Whisper model cache
+        self.whisper_models = {}
+        # Don't load default model here - wait for first use
 
         # Initialize Diarization pipeline
         self.diarization_pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             cache_dir=self.model_dir,
             use_auth_token=self.auth_token,
-        ).to(device) # Use the determined device
+        ).to(self.device)
+
+    def _load_whisper_model(self, model_size):
+        """Load a Whisper model if not already loaded"""
+        if model_size not in self.whisper_models:
+            logging.info(f"Loading Whisper model: {model_size}")
+            self.whisper_models[model_size] = whisper.load_model(model_size)
+            logging.info(f"Whisper model {model_size} loaded successfully")
+        return self.whisper_models[model_size]
 
     def start_transcription(self, file_path, guid, use_diarization=False, model_size=None):
         """Start transcription with specified model"""
         try:
+            # Check if transcription is already in progress
+            if guid in self.transcriptions:
+                current_status = self.transcriptions[guid].status
+                if current_status in [TranscriptionStatus.PENDING, TranscriptionStatus.PROCESSING]:
+                    logging.warning(f"Transcription already in progress for GUID: {guid}")
+                    return
+            
             # Use provided model size or fall back to default
             model = model_size or self.model_size
             
-            # Load the specified Whisper model
-            whisper_model = whisper.load_model(model)
+            # Ensure the requested model is loaded
+            whisper_model = self._load_whisper_model(model)
             
             # Start transcription with the loaded model
-            logging.info(f"Initializing transcription for GUID: {guid} with diarization: {use_diarization}")
+            logging.info(f"Initializing transcription for GUID: {guid} with model: {model}, diarization: {use_diarization}")
             
             # Create initial transcription result
             self.transcriptions[guid] = TranscriptionResult(
@@ -112,9 +129,12 @@ class TranscriptionManager:
             audio_path = self._ensure_audio_file(file_path, guid)
             
             try:
-                # Use Whisper directly for transcription
+                # Get the appropriate Whisper model
+                whisper_model = self._load_whisper_model(model)
+                
+                # Use Whisper for transcription
                 print("Starting Whisper transcription...")
-                result = self.whisper_model.transcribe(
+                result = whisper_model.transcribe(
                     audio_path,
                     language="en",
                     task="transcribe",

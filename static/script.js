@@ -37,7 +37,7 @@ document.getElementById('videoSettingsForm').addEventListener('submit', function
     formData.append('whisperModel', whisperModel);
     formData.append('useDiarization', useDiarization);
 
-    console.log(`Uploading video: ${videoFile.name} with diarization: ${useDiarization}`);
+    console.log(`Uploading video: ${videoFile.name} with model: ${whisperModel}, diarization: ${useDiarization}`);
     uploadVideo(videoFile, useDiarization);
 });
 
@@ -459,6 +459,10 @@ async function uploadVideo(file, useDiarization = false) {
     let isFirstChunk = true;
     const totalChunks = Math.ceil(file.size / chunkSize);
     let currentChunk = 0;
+    
+    // Get the selected model
+    const selectedModel = document.getElementById('whisperModel').value;
+    console.log(`Selected model: ${selectedModel}`);
 
     // Create a loading card
     const videoCards = document.getElementById('video-cards');
@@ -499,13 +503,14 @@ async function uploadVideo(file, useDiarization = false) {
                 reader.readAsDataURL(chunk);
             });
 
-            // Upload chunk
+            // Upload chunk with selected model
             const response = await window.pywebview.api.upload_video_chunk(
                 base64Chunk, 
                 guid ? `${guid}${file.name.substr(file.name.lastIndexOf('.'))}` : file.name,
                 isFirstChunk,
                 file.size,
-                useDiarization
+                useDiarization,
+                selectedModel  // Pass the selected model
             );
 
             if (!response.success) {

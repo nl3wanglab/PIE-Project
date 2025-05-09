@@ -232,10 +232,10 @@
                                 </button>
                             </div>
                             <div class="scoring-metrics">
-                                <h6 class="metric-group-header">Verbal Interaction Metrics</h6>
+                                <h6 class="metric-group-header">Core Performance Metrics</h6>
                                 <div class="metric-item">
                                     <div class="metric-header">
-                                        <label for="turnBalanceScore">Turn Balance</label>
+                                        <label for="turnBalanceScore" data-bs-toggle="tooltip" data-bs-placement="right">Turn Balance</label>
                                         <span class="metric-value">0%</span>
                                     </div>
                                     <div class="slider-container">
@@ -243,9 +243,10 @@
                                         <span class="slider-value">No data available</span>
                                     </div>
                                 </div>
+                                
                                 <div class="metric-item">
                                     <div class="metric-header">
-                                    <label for="engagementScore">Engagement</label>
+                                        <label for="engagementScore" data-bs-toggle="tooltip" data-bs-placement="right">Engagement</label>
                                         <span class="metric-value">0%</span>
                                     </div>
                                     <div class="slider-container">
@@ -253,59 +254,14 @@
                                         <span class="slider-value">No data available</span>
                                     </div>
                                 </div>
-
-                                <h6 class="metric-group-header">Speech Quality Metrics</h6>
+                                
                                 <div class="metric-item">
                                     <div class="metric-header">
-                                        <label for="pitchVariationScore">Pitch Variation</label>
-                                        <span class="metric-value">0%</span>
-                                    </div>
-                                    <div class="slider-container">
-                                        <input type="range" class="form-range scoring-slider" id="pitchVariationScore" min="0" max="100" value="0" disabled>
-                                        <span class="slider-value">No data available</span>
-                                    </div>
-                                </div>
-                                <div class="metric-item">
-                                    <div class="metric-header">
-                                        <label for="speechRateConsistencyScore">Speech Rate Consistency</label>
-                                        <span class="metric-value">0%</span>
-                                    </div>
-                                    <div class="slider-container">
-                                        <input type="range" class="form-range scoring-slider" id="speechRateConsistencyScore" min="0" max="100" value="0" disabled>
-                                        <span class="slider-value">No data available</span>
-                                    </div>
-                                </div>
-                                <div class="metric-item">
-                                    <div class="metric-header">
-                                    <label for="clarityScore">Clarity</label>
+                                        <label for="clarityScore" data-bs-toggle="tooltip" data-bs-placement="right">Clarity</label>
                                         <span class="metric-value">0%</span>
                                     </div>
                                     <div class="slider-container">
                                         <input type="range" class="form-range scoring-slider" id="clarityScore" min="0" max="100" value="0" disabled>
-                                        <span class="slider-value">No data available</span>
-                                    </div>
-                                </div>
-
-                                <h6 class="metric-group-header">Physiological Metrics</h6>
-                                <div class="metric-item">
-                                    <div class="metric-header">
-                                        <label for="heartRateStabilityScore">Heart Rate Stability</label>
-                                        <span class="metric-value">0%</span>
-                                    </div>
-                                    <div class="slider-container">
-                                        <input type="range" class="form-range scoring-slider" id="heartRateStabilityScore" min="0" max="100" value="0" disabled>
-                                        <span class="slider-value">No data available</span>
-                                    </div>
-                                </div>
-
-                                <h6 class="metric-group-header">Timing Metrics</h6>
-                                <div class="metric-item">
-                                    <div class="metric-header">
-                                        <label for="silenceRatioScore">Silence Ratio</label>
-                                        <span class="metric-value">0%</span>
-                                    </div>
-                                    <div class="slider-container">
-                                        <input type="range" class="form-range scoring-slider" id="silenceRatioScore" min="0" max="100" value="0" disabled>
                                         <span class="slider-value">No data available</span>
                                     </div>
                                 </div>
@@ -319,8 +275,80 @@
                                 <div class="chart-container">
                                     <canvas id="parentHeartRateChart"></canvas>
                                 </div>
-                                <div class="chart-container" style="display:none;">
-                                    <canvas id="childHeartRateChart"></canvas>
+                            </div>
+                            
+                            <div class="detailed-metrics mt-4">
+                                <h5>Detailed Analysis</h5>
+                                
+                                <div class="metric-group">
+                                    <h6 class="metric-group-header">Heart Rate Analysis</h6>
+                                    <div class="metric-item">
+                                        <div class="metric-header">
+                                            <label>Heart Rate Stability</label>
+                                            <span class="metric-value">0%</span>
+                                        </div>
+                                        <div class="metric-details">
+                                            <div class="detail-item">
+                                                <span class="detail-label">Average HR:</span>
+                                                <span class="detail-value" id="avgHR">-- BPM</span>
+                                            </div>
+                                            <div class="detail-item">
+                                                <span class="detail-label">HR Variability:</span>
+                                                <span class="detail-value" id="hrVariability">-- BPM</span>
+                                            </div>
+                                            <div class="detail-item">
+                                                <span class="detail-label">Spike Count:</span>
+                                                <span class="detail-value" id="spikeCount">--</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="metric-group">
+                                    <h6 class="metric-group-header">Voice Analysis</h6>
+                                    <div class="metric-item">
+                                        <div class="metric-header">
+                                            <label>Pitch Variation</label>
+                                            <span class="metric-value">0%</span>
+                                        </div>
+                                        <div class="metric-details" id="pitchDetails">
+                                            <!-- Will be populated dynamically -->
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="metric-item">
+                                        <div class="metric-header">
+                                            <label>Speech Rate</label>
+                                            <span class="metric-value">0%</span>
+                                        </div>
+                                        <div class="metric-details" id="speechRateDetails">
+                                            <!-- Will be populated dynamically -->
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="metric-group">
+                                    <h6 class="metric-group-header">Silence Analysis</h6>
+                                    <div class="metric-item">
+                                        <div class="metric-header">
+                                            <label>Silence Metrics</label>
+                                            <span class="metric-value">0%</span>
+                                        </div>
+                                        <div class="metric-details">
+                                            <div class="detail-item">
+                                                <span class="detail-label">Total Silence:</span>
+                                                <span class="detail-value" id="totalSilence">-- s</span>
+                                            </div>
+                                            <div class="detail-item">
+                                                <span class="detail-label">Silence Ratio:</span>
+                                                <span class="detail-value" id="silenceRatio">--%</span>
+                                            </div>
+                                            <div class="detail-item">
+                                                <span class="detail-label">Avg Silence Duration:</span>
+                                                <span class="detail-value" id="avgSilence">-- s</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             

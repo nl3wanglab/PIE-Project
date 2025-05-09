@@ -1472,64 +1472,33 @@ async function initializeScoring() {
             const savedScores = response.data.scores || {};
             const detailedMetrics = response.data.detailed_metrics || {};
             
-            // Update slider values and display
+            // Update core scoring metrics
             sliders.forEach(slider => {
                 const metric = slider.id.replace('Score', '');
                 const metricValue = slider.closest('.metric-item').querySelector('.metric-value');
                 const valueDisplay = slider.nextElementSibling;
+                const metricData = savedScores[metric] || {};
                 
                 // Set default value if no saved score
-                slider.value = savedScores[metric]?.current || 0;
-                metricValue.textContent = `${slider.value}%`;
+                slider.value = metricData.current || 0;
                 
-                // Format display based on metric type
-                switch(metric) {
-                    case 'turn_balance':
-                        const turnMetrics = detailedMetrics.verbal_metrics?.current || {};
-                        const turnScore = calculateTurnBalanceScore(turnMetrics);
-                        slider.value = turnScore;
-                        metricValue.textContent = `Turns: ${turnMetrics.turn_count || 'No data'}, Avg Duration: ${turnMetrics.avg_turn_duration?.toFixed(1) || 'No data'}s`;
-                        break;
-                    case 'heart_rate_stability':
-                        const hrMetrics = detailedMetrics.heart_rate_metrics?.current || {};
-                        const hrScore = calculateHRStabilityScore(hrMetrics);
-                        slider.value = hrScore;
-                        metricValue.textContent = `HR Variability: ${hrMetrics.hr_variability?.toFixed(1) || 'No data'} BPM, Avg HR: ${hrMetrics.avg_hr?.toFixed(0) || 'No data'} BPM`;
-                        break;
-                    case 'pitch_variation':
-                        const pitchRanges = detailedMetrics.pitch_ranges?.current || {};
-                        const pitchScore = calculatePitchVariationScore(pitchRanges);
-                        slider.value = pitchScore;
-                        metricValue.textContent = `Avg Pitch Range: ${avgPitchRange?.toFixed(1) || 'No data'} Hz, Speakers: ${Object.keys(pitchRanges).length || 'No data'}`;
-                        break;
-                    case 'speech_rate_consistency':
-                        const speechRates = detailedMetrics.speech_rates?.current || {};
-                        const speechScore = calculateSpeechRateScore(speechRates);
-                        slider.value = speechScore;
-                        metricValue.textContent = `Avg Speech Rate: ${avgSpeechRate?.toFixed(1) || 'No data'} WPM, Speakers: ${Object.keys(speechRates).length || 'No data'}`;
-                        break;
-                    case 'silence_ratio':
-                        const silenceMetrics = detailedMetrics.silence_metrics?.current || {};
-                        const silenceScore = calculateSilenceRatioScore(silenceMetrics);
-                        slider.value = silenceScore;
-                        metricValue.textContent = `Silence Ratio: ${(silenceMetrics.silence_ratio * 100)?.toFixed(1) || 'No data'}%, Total Silence: ${silenceMetrics.total_silence?.toFixed(1) || 'No data'}s`;
-                        break;
-                    case 'engagement':
-                        const engagementMetrics = detailedMetrics.verbal_metrics?.current || {};
-                        const engagementScore = calculateEngagementScore(engagementMetrics);
-                        slider.value = engagementScore;
-                        metricValue.textContent = `Interactions: ${engagementMetrics.interaction_count || 'No data'}, Avg Duration: ${engagementMetrics.avg_interaction_duration?.toFixed(1) || 'No data'}s`;
-                        break;
-                    case 'clarity':
-                        const clarityMetrics = detailedMetrics.silence_metrics?.current || {};
-                        const clarityScore = calculateClarityScore(clarityMetrics);
-                        slider.value = clarityScore;
-                        metricValue.textContent = `Pauses: ${clarityMetrics.pause_count || 'No data'}, Avg Pause: ${clarityMetrics.avg_pause_duration?.toFixed(1) || 'No data'}s`;
-                        break;
-                    default:
-                        valueDisplay.textContent = 'No data available';
+                // Update metric label and description if available
+                const metricLabel = slider.closest('.metric-item').querySelector('label');
+                if (metricData.label) {
+                    metricLabel.textContent = metricData.label;
                 }
+                
+                // Add description tooltip if available
+                if (metricData.description) {
+                    metricLabel.title = metricData.description;
+                }
+                
+                // Update value display
+                metricValue.textContent = `${metricData.current || 0}%`;
             });
+            
+            // Update detailed metrics
+            updateDetailedMetrics(detailedMetrics);
         } else {
             console.error('Error loading scores:', response.error);
         }
@@ -1537,7 +1506,7 @@ async function initializeScoring() {
         console.error('Error initializing scoring:', error);
     }
     
-    // Handle unlock button click
+    // Handle unlock button
     unlockButton.addEventListener('click', () => {
         const isUnlocked = unlockButton.classList.contains('unlocked');
         
@@ -1572,9 +1541,12 @@ async function initializeScoring() {
             
             sliders.forEach(s => {
                 const m = s.id.replace('Score', '');
+                const metricData = savedScores[m] || {};
                 scores.scores[m] = {
                     current: parseInt(s.value),
-                    original: parseInt(s.value)
+                    original: metricData.original || parseInt(s.value),
+                    label: metricData.label || m,
+                    description: metricData.description || ''
                 };
             });
             
@@ -1591,61 +1563,44 @@ async function initializeScoring() {
     });
 }
 
-// Scoring calculation functions
-function calculateTurnBalanceScore(metrics) {
-    if (!metrics || !metrics.turn_count || !metrics.avg_turn_duration) return 0;
-    // Score based on balanced turn count and duration
-    const turnCountScore = Math.min(metrics.turn_count * 2, 50); // Max 50 points for turns
-    const durationScore = Math.min(metrics.avg_turn_duration * 5, 50); // Max 50 points for duration
-    return Math.round((turnCountScore + durationScore) / 2);
-}
+function updateDetailedMetrics(detailedMetrics) {
+    // Update Heart Rate metrics
+    const hrMetrics = detailedMetrics.heart_rate_metrics?.current || {};
+    document.getElementById('avgHR').textContent = `${hrMetrics.avg_hr?.toFixed(0) || '--'} BPM`;
+    document.getElementById('hrVariability').textContent = `${hrMetrics.hr_variability?.toFixed(1) || '--'} BPM`;
+    document.getElementById('spikeCount').textContent = hrMetrics.spike_count || '--';
 
-function calculateHRStabilityScore(metrics) {
-    if (!metrics || !metrics.hr_variability || !metrics.avg_hr) return 0;
-    // Score based on HR variability (lower is better) and average HR
-    const variabilityScore = Math.max(0, 100 - (metrics.hr_variability * 2));
-    return Math.round(variabilityScore);
-}
+    // Update Pitch metrics
+    const pitchRanges = detailedMetrics.pitch_ranges?.current || {};
+    const pitchDetails = document.getElementById('pitchDetails');
+    if (pitchDetails) {
+        pitchDetails.innerHTML = Object.entries(pitchRanges)
+            .map(([speaker, range]) => `
+                <div class="detail-item">
+                    <span class="detail-label">Speaker ${speaker}:</span>
+                    <span class="detail-value">${range.toFixed(1)} Hz</span>
+                </div>
+            `).join('');
+    }
 
-function calculatePitchVariationScore(pitchRanges) {
-    if (!pitchRanges || Object.keys(pitchRanges).length === 0) return 0;
-    // Score based on average pitch range
-    const avgPitchRange = Object.values(pitchRanges).reduce((a, b) => a + b, 0) / Object.keys(pitchRanges).length;
-    return Math.round(Math.min(avgPitchRange * 2, 100));
-}
+    // Update Speech Rate metrics
+    const speechRates = detailedMetrics.speech_rates?.current || {};
+    const speechRateDetails = document.getElementById('speechRateDetails');
+    if (speechRateDetails) {
+        speechRateDetails.innerHTML = Object.entries(speechRates)
+            .map(([speaker, rate]) => `
+                <div class="detail-item">
+                    <span class="detail-label">Speaker ${speaker}:</span>
+                    <span class="detail-value">${rate.toFixed(1)} WPM</span>
+                </div>
+            `).join('');
+    }
 
-function calculateSpeechRateScore(speechRates) {
-    if (!speechRates || Object.keys(speechRates).length === 0) return 0;
-    // Score based on consistency of speech rates
-    const rates = Object.values(speechRates);
-    const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
-    const variance = rates.reduce((a, b) => a + Math.pow(b - avgRate, 2), 0) / rates.length;
-    return Math.round(Math.max(0, 100 - (variance * 10)));
-}
-
-function calculateSilenceRatioScore(metrics) {
-    if (!metrics || !metrics.silence_ratio) return 0;
-    // Score based on optimal silence ratio (around 20-30%)
-    const ratio = metrics.silence_ratio * 100;
-    const optimalRange = 25; // Target silence ratio
-    const score = 100 - Math.abs(ratio - optimalRange) * 2;
-    return Math.round(Math.max(0, score));
-}
-
-function calculateEngagementScore(metrics) {
-    if (!metrics || !metrics.interaction_count || !metrics.avg_interaction_duration) return 0;
-    // Score based on interaction count and duration
-    const countScore = Math.min(metrics.interaction_count * 5, 50);
-    const durationScore = Math.min(metrics.avg_interaction_duration * 10, 50);
-    return Math.round((countScore + durationScore) / 2);
-}
-
-function calculateClarityScore(metrics) {
-    if (!metrics || !metrics.pause_count || !metrics.avg_pause_duration) return 0;
-    // Score based on optimal pause count and duration
-    const pauseCountScore = Math.min(metrics.pause_count * 2, 50);
-    const durationScore = Math.min(metrics.avg_pause_duration * 10, 50);
-    return Math.round((pauseCountScore + durationScore) / 2);
+    // Update Silence metrics
+    const silenceMetrics = detailedMetrics.silence_metrics?.current || {};
+    document.getElementById('totalSilence').textContent = `${silenceMetrics.total_silence?.toFixed(1) || '--'} s`;
+    document.getElementById('silenceRatio').textContent = `${(silenceMetrics.silence_ratio * 100)?.toFixed(1) || '--'}%`;
+    document.getElementById('avgSilence').textContent = `${silenceMetrics.avg_silence?.toFixed(1) || '--'} s`;
 }
 
 // Initialize diarization functionality
