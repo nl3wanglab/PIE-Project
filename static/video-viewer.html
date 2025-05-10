@@ -271,6 +271,9 @@
                     <div class="tab-pane fade" id="analytics">
                         <div class="analytics-section">
                             <h4>Analytics</h4>
+                            <button id="loadProcessAnalyticsButton" class="btn btn-primary mb-3">
+                                <i class="bi bi-arrow-clockwise"></i> Load/Process Full Analytics
+                            </button>
                             <div id="chartsContainer">
                                 <div class="chart-container">
                                     <canvas id="parentHeartRateChart"></canvas>
@@ -350,6 +353,15 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                <!-- New Sentiment Analysis Section -->
+                                <div class="metric-group">
+                                    <h6 class="metric-group-header">Sentiment Analysis (per Speaker)</h6>
+                                    <div id="sentimentAnalysisData" class="metric-details">
+                                        <p>Sentiment data will appear here after processing. Click the button above.</p>
+                                    </div>
+                                </div>
+                                <!-- End New Sentiment Analysis Section -->
                             </div>
                             
                             <div class="hr-data-section mb-4 mt-5">

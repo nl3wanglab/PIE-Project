@@ -552,61 +552,99 @@ class API:
             logging.error(f"Error getting HR data: {str(e)}")
             return {"success": False, "error": str(e)}
 
-    def save_scores(self, guid, scores):
-        """Save scoring data for a video"""
+    def save_scores(self, guid, scores_from_payload):
+        logging.info(f"Attempting to save scores for GUID: {guid}")
         try:
             scores_dir = os.path.join(UPLOAD_FOLDER, 'scores')
             os.makedirs(scores_dir, exist_ok=True)
-            
             scores_file = os.path.join(scores_dir, f"{guid}_scores.json")
-            
-            # Get existing scores if any
+
             existing_scores = {}
             if os.path.exists(scores_file):
-                with open(scores_file, 'r') as f:
-                    existing_scores = json.load(f)
+                try:
+                    with open(scores_file, 'r') as f:
+                        existing_scores = json.load(f)
+                    logging.info(f"Loaded existing scores for GUID {guid} from {scores_file}")
+                except json.JSONDecodeError:
+                    logging.error(f"Could not decode existing scores file for GUID {guid}. Will overwrite.", exc_info=True)
+                    existing_scores = {} # Start fresh if file is corrupt
             
-            # Initialize structure if not present
-            if 'scores' not in existing_scores:
+            # Ensure base structure in existing_scores for merging
+            if 'scores' not in existing_scores or not isinstance(existing_scores['scores'], dict):
                 existing_scores['scores'] = {}
-            if 'detailed_metrics' not in existing_scores:
+            if 'detailed_metrics' not in existing_scores or not isinstance(existing_scores['detailed_metrics'], dict):
                 existing_scores['detailed_metrics'] = {}
-            
-            # Update scores
-            if 'scores' in scores:
-                for metric, values in scores['scores'].items():
-                    if metric not in existing_scores['scores']:
-                        existing_scores['scores'][metric] = {
-                            'original': values['original'],
-                            'current': values['current']
-                        }
+
+            # Update main scores
+            if 'scores' in scores_from_payload and isinstance(scores_from_payload['scores'], dict):
+                for metric_key, new_data_for_metric in scores_from_payload['scores'].items():
+                    logging.debug(f"Processing main score for metric '{metric_key}'. New data: {new_data_for_metric}")
+                    if not isinstance(new_data_for_metric, dict):
+                        logging.warning(f"Malformed new_data for main score '{metric_key}'. Expected dict, got {type(new_data_for_metric)}. Skipping.")
+                        continue
+
+                    if metric_key not in existing_scores['scores']:
+                        existing_scores['scores'][metric_key] = {} # Initialize if new metric
+
+                    # Preserve 'original' from existing file if it exists and is valid, otherwise take from new_data
+                    if 'original' in existing_scores['scores'][metric_key]:
+                        logging.debug(f"Main metric '{metric_key}': Kept existing 'original' value: {existing_scores['scores'][metric_key]['original']}")
+                    elif 'original' in new_data_for_metric:
+                        existing_scores['scores'][metric_key]['original'] = new_data_for_metric['original']
+                        logging.debug(f"Main metric '{metric_key}': Set 'original' from new data: {new_data_for_metric['original']}")
                     else:
-                        # Only update current value, preserve original
-                        existing_scores['scores'][metric]['current'] = values['current']
-            
-            # Update detailed metrics
-            if 'detailed_metrics' in scores:
-                for metric, values in scores['detailed_metrics'].items():
-                    if metric not in existing_scores['detailed_metrics']:
-                        existing_scores['detailed_metrics'][metric] = {
-                            'original': values['original'],
-                            'current': values['current']
-                        }
+                        # Fallback for 'original' if completely missing
+                        fallback_original = new_data_for_metric.get('current', 0)
+                        existing_scores['scores'][metric_key]['original'] = fallback_original
+                        logging.warning(f"Main metric '{metric_key}': Missing 'original' in new data. Set 'original' to current value: {fallback_original}")
+                    
+                    # Update 'current', 'label', 'description'
+                    existing_scores['scores'][metric_key]['current'] = new_data_for_metric.get('current', existing_scores['scores'][metric_key].get('original', 0)) # Fallback to original if current missing
+                    if 'label' in new_data_for_metric:
+                        existing_scores['scores'][metric_key]['label'] = new_data_for_metric['label']
+                    if 'description' in new_data_for_metric:
+                        existing_scores['scores'][metric_key]['description'] = new_data_for_metric['description']
+
+            # Update detailed metrics (similar logic)
+            if 'detailed_metrics' in scores_from_payload and isinstance(scores_from_payload['detailed_metrics'], dict):
+                for metric_key, new_data_for_metric in scores_from_payload['detailed_metrics'].items():
+                    logging.debug(f"Processing detailed metric '{metric_key}'. New data (first 200 chars): {str(new_data_for_metric)[:200]}")
+                    if not isinstance(new_data_for_metric, dict):
+                        logging.warning(f"Malformed new_data for detailed_metric '{metric_key}'. Expected dict, got {type(new_data_for_metric)}. Skipping.")
+                        continue
+
+                    if metric_key not in existing_scores['detailed_metrics']:
+                        existing_scores['detailed_metrics'][metric_key] = {}
+
+                    if 'original' in existing_scores['detailed_metrics'][metric_key]:
+                        logging.debug(f"Detailed metric '{metric_key}': Kept existing 'original' value.")
+                    elif 'original' in new_data_for_metric:
+                        existing_scores['detailed_metrics'][metric_key]['original'] = new_data_for_metric['original']
+                        logging.debug(f"Detailed metric '{metric_key}': Set 'original' from new data.")
                     else:
-                        # Only update current value, preserve original
-                        existing_scores['detailed_metrics'][metric]['current'] = values['current']
+                        fallback_original = new_data_for_metric.get('current', {})
+                        existing_scores['detailed_metrics'][metric_key]['original'] = fallback_original
+                        logging.warning(f"Detailed metric '{metric_key}': Missing 'original' in new data. Set 'original' to current value.")
+
+                    existing_scores['detailed_metrics'][metric_key]['current'] = new_data_for_metric.get('current', existing_scores['detailed_metrics'][metric_key].get('original', {}))
+                    if 'label' in new_data_for_metric:
+                        existing_scores['detailed_metrics'][metric_key]['label'] = new_data_for_metric['label']
+                    if 'description' in new_data_for_metric:
+                        existing_scores['detailed_metrics'][metric_key]['description'] = new_data_for_metric['description']
             
-            # Update timestamp
-            existing_scores['timestamp'] = str(datetime.datetime.now())
+            existing_scores['timestamp'] = scores_from_payload.get('timestamp', str(datetime.datetime.now()))
             
-            # Save updated scores
             with open(scores_file, 'w') as f:
                 json.dump(existing_scores, f, indent=2)
             
-            logging.info(f"Saved scores for {guid}")
+            logging.info(f"Successfully saved scores for GUID {guid} to {scores_file}. Final structure keys: scores={list(existing_scores['scores'].keys())}, detailed_metrics={list(existing_scores['detailed_metrics'].keys())}")
             return {"success": True}
+
+        except KeyError as ke:
+            logging.error(f"KeyError while saving scores for GUID {guid}: '{ke}' was missing. Scores data being processed (first 500 chars): {str(scores_from_payload)[:500]}", exc_info=True)
+            return {"success": False, "error": f"Missing key during score saving: {ke}"}
         except Exception as e:
-            logging.error(f"Error saving scores: {str(e)}")
+            logging.error(f"Unexpected error saving scores for GUID {guid}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     def get_scores(self, guid):
@@ -623,54 +661,103 @@ class API:
                 'timestamp': str(datetime.datetime.now())
             }}
         except Exception as e:
-            logging.error(f"Error getting scores: {str(e)}")
-            return {"success": False, "error": str(e)}
+            logging.error(f"Error getting scores: {e}")
+            return None
 
     def calculate_scores(self, guid):
-        """Calculate all scores for a video"""
+        logging.info(f"Received request to calculate scores for GUID: {guid}")
         try:
-            # Get the audio file path
-            mapping_file = os.path.join(UPLOAD_FOLDER, 'filename_mapping.json')
-            if os.path.exists(mapping_file):
-                with open(mapping_file, 'r') as f:
-                    mapping = json.load(f)
-                    if guid in mapping:
-                        original_filename = mapping[guid]['original_filename']
-                        extension = os.path.splitext(original_filename)[1]
-                        audio_path = os.path.join(UPLOAD_FOLDER, f"{guid}{extension}")
-                        
-                        # Get diarization data
-                        diarization_path = os.path.join(UPLOAD_FOLDER, 'diarization', f"{guid}_diarization.json")
-                        if os.path.exists(diarization_path):
-                            with open(diarization_path, 'r') as f:
-                                diarization_data = json.load(f)['segments']
-                        else:
-                            diarization_data = []
-                        
-                        # Get HR data
-                        hr_path = os.path.join(UPLOAD_FOLDER, 'hr_data', f"{guid}_hr.csv")
-                        hr_data = []
-                        if os.path.exists(hr_path):
-                            df = pd.read_csv(hr_path)
-                            hr_data = df.to_dict('records')
-                        
-                        # Calculate all scores
-                        scores = self.scoring_system.calculate_all_scores(
-                            guid,
-                            audio_path,
-                            diarization_data,
-                            hr_data
-                        )
-                        
-                        # Save the calculated scores
-                        self.save_scores(guid, scores)
-                        
-                        return {"success": True, "data": scores}
+            # 1. Determine the actual audio file path
+            original_filename = self.get_original_filename(guid)
+            if not original_filename:
+                logging.error(f"Could not find original filename for GUID: {guid}")
+                return {"success": False, "error": "Original filename not found for GUID."}
             
-            return {"success": False, "error": "Video data not found"}
+            file_extension = os.path.splitext(original_filename)[1]
+            # Try both processed and original audio paths
+            processed_audio_filename = f"{guid}_processed.wav"
+            original_audio_filename = f"{guid}{file_extension}"
+            
+            actual_audio_file_path = None
+            potential_paths = [
+                os.path.join(self.upload_folder, processed_audio_filename),
+                os.path.join(self.upload_folder, original_audio_filename)
+            ]
+
+            for path_option in potential_paths:
+                if os.path.exists(path_option):
+                    actual_audio_file_path = path_option
+                    logging.info(f"Using audio file for scoring: {actual_audio_file_path}")
+                    break
+            
+            if not actual_audio_file_path:
+                logging.error(f"No audio file found for GUID: {guid} (checked {potential_paths})")
+                return {"success": False, "error": f"Audio file not found for GUID {guid}."}
+
+            # 2. Load full transcript data
+            transcript_file_path = os.path.join(UPLOAD_FOLDER, "transcripts", f"{guid}_transcript.json")
+            full_transcript_data = None
+            if os.path.exists(transcript_file_path):
+                try:
+                    with open(transcript_file_path, 'r') as f:
+                        full_transcript_data = json.load(f)
+                    logging.info(f"Loaded full transcript data from: {transcript_file_path}")
+                except Exception as e:
+                    logging.error(f"Error loading full transcript data for {guid}: {e}")
+                    # Continue without it, scoring.py should handle None
+            else:
+                logging.warning(f"Full transcript file not found: {transcript_file_path}")
+
+            # 3. Load dedicated diarization data (if it exists)
+            diarization_file_path = os.path.join(UPLOAD_FOLDER, "transcripts", f"{guid}_diarization.json")
+            diarization_file_content = None
+            if os.path.exists(diarization_file_path):
+                try:
+                    with open(diarization_file_path, 'r') as f:
+                        diarization_file_content = json.load(f)
+                    logging.info(f"Loaded dedicated diarization data from: {diarization_file_path}")
+                except Exception as e:
+                    logging.error(f"Error loading dedicated diarization data for {guid}: {e}")
+                    # Continue without it, scoring.py uses transcript's diarized_segments as fallback
+            else:
+                logging.info(f"Dedicated diarization file not found (this is okay, will use transcript fallback): {diarization_file_path}")
+
+            # 4. Load HR data (if it exists)
+            hr_file_path = os.path.join(UPLOAD_FOLDER, "hr_data", f"{guid}_hr_data.csv")
+            hr_file_content = None
+            if os.path.exists(hr_file_path):
+                try:
+                    hr_df = pd.read_csv(hr_file_path)
+                    hr_file_content = hr_df.to_dict(orient='records')
+                    logging.info(f"Loaded HR data from: {hr_file_path}")
+                except Exception as e:
+                    logging.error(f"Error loading HR data for {guid}: {e}")
+                    # Continue without it, scoring.py should handle None
+            else:
+                logging.info(f"HR data file not found: {hr_file_path}")
+
+            # 5. Call ScoringSystem
+            logging.info(f"Calling scoring_system.calculate_all_scores with audio_path: {actual_audio_file_path}, full_transcript_data: {'present' if full_transcript_data else 'absent'}, diarization_data_content: {'present' if diarization_file_content else 'absent'}, hr_data: {'present' if hr_file_content else 'absent'}")
+            scores_result = self.scoring_system.calculate_all_scores(
+                audio_file_path=actual_audio_file_path,
+                full_transcript_data=full_transcript_data,
+                diarization_data_content=diarization_file_content,
+                hr_data=hr_file_content
+            )
+
+            if scores_result and scores_result.get('success', False):
+                # Save the detailed metrics and scores (calculate_all_scores now returns a dict with 'success' and 'data')
+                self.save_scores(guid, scores_result['data']) # Corrected back to save_scores
+                logging.info(f"Scores calculated and saved successfully for GUID: {guid}. Result (first 200 chars of data): {str(scores_result['data'])[:200]}")
+                return scores_result # Return the full result including success status and data
+            else:
+                error_message = scores_result.get('error', 'Unknown error during score calculation') if scores_result else 'Score calculation returned None'
+                logging.error(f"Score calculation failed for GUID {guid}: {error_message}")
+                return {"success": False, "error": error_message}
+
         except Exception as e:
-            logging.error(f"Error calculating scores: {str(e)}")
-            return {"success": False, "error": str(e)}
+            logging.error(f"Unexpected error in calculate_scores for GUID {guid}: {e}", exc_info=True)
+            return {"success": False, "error": f"Unexpected error: {str(e)}"}
 
     def delete_hr_data(self, guid):
         """Delete HR data for a video using GUID"""
