@@ -47,6 +47,43 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Start initialization
     initializeComponents();
 
+    // Event listener for the new Load/Process Analytics Button
+    const loadAnalyticsBtn = document.getElementById('loadProcessAnalyticsButton');
+    if (loadAnalyticsBtn) {
+        loadAnalyticsBtn.addEventListener('click', async () => {
+            if (!window.currentGuid) {
+                showMessage('No video ID found. Please ensure a video is loaded.', 'error');
+                return;
+            }
+            try {
+                showMessage('Processing full analytics... This may take a moment.', 'info');
+                loadAnalyticsBtn.disabled = true;
+                loadAnalyticsBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+                
+                const response = await window.pywebview.api.calculate_scores(window.currentGuid);
+                
+                if (response && response.success && response.data) {
+                    // Update UI with all new scores and metrics
+                    if (response.data.scores) {
+                        updateMainScoresUI(response.data.scores); // Assumes/Creates a function to update main score sliders
+                    }
+                    if (response.data.detailed_metrics) {
+                        updateDetailedMetrics(response.data.detailed_metrics);
+                    }
+                    showMessage('Analytics processed and updated successfully.', 'success');
+                } else {
+                    showMessage(`Error processing analytics: ${response.error || 'Unknown error'}`, 'error');
+                }
+            } catch (e) {
+                console.error("Error calling calculate_scores:", e);
+                showMessage(`Failed to process analytics: ${e.toString()}`, 'error');
+            } finally {
+                loadAnalyticsBtn.disabled = false;
+                loadAnalyticsBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Load/Process Full Analytics';
+            }
+        });
+    }
+
     // Handle transcript view switching
     const analyticsTab = document.querySelector('a[href="#analytics"]'); // Select the Analytics tab
 
@@ -1464,46 +1501,28 @@ document.addEventListener('DOMContentLoaded', function() {
 async function initializeScoring() {
     const unlockButton = document.getElementById('unlockScoring');
     const sliders = document.querySelectorAll('.scoring-slider');
+    let currentSavedScores = {}; // To store the original scores for slider interaction
     
     try {
         // Load saved scores and metrics from backend
         const response = await window.pywebview.api.get_scores(window.currentGuid);
-        if (response.success) {
-            const savedScores = response.data.scores || {};
+        if (response.success && response.data) {
+            currentSavedScores = response.data.scores || {};
             const detailedMetrics = response.data.detailed_metrics || {};
             
-            // Update core scoring metrics
-            sliders.forEach(slider => {
-                const metric = slider.id.replace('Score', '');
-                const metricValue = slider.closest('.metric-item').querySelector('.metric-value');
-                const valueDisplay = slider.nextElementSibling;
-                const metricData = savedScores[metric] || {};
-                
-                // Set default value if no saved score
-                slider.value = metricData.current || 0;
-                
-                // Update metric label and description if available
-                const metricLabel = slider.closest('.metric-item').querySelector('label');
-                if (metricData.label) {
-                    metricLabel.textContent = metricData.label;
-                }
-                
-                // Add description tooltip if available
-                if (metricData.description) {
-                    metricLabel.title = metricData.description;
-                }
-                
-                // Update value display
-                metricValue.textContent = `${metricData.current || 0}%`;
-            });
+            // Update core scoring metrics sliders and values
+            updateMainScoresUI(currentSavedScores);
             
-            // Update detailed metrics
+            // Update detailed metrics section (including sentiment if available)
             updateDetailedMetrics(detailedMetrics);
         } else {
             console.error('Error loading scores:', response.error);
+            // Initialize sliders to 0 or default if no scores found
+            updateMainScoresUI({}); 
         }
     } catch (error) {
         console.error('Error initializing scoring:', error);
+        updateMainScoresUI({}); // Initialize sliders on error
     }
     
     // Handle unlock button
@@ -1533,26 +1552,39 @@ async function initializeScoring() {
             // Update the metric value display
             metricValue.textContent = `${value}%`;
             
-            // Collect all current scores
-            const scores = {
+            // Collect all current scores from sliders
+            const scoresToSave = {
                 scores: {},
-                detailed_metrics: {}
+                // Assuming detailed_metrics are not editable by sliders, so we don't resave them from here
+                // Or, if they are, they need to be fetched and included.
+                // For now, only saving what sliders control.
             };
             
-            sliders.forEach(s => {
+            document.querySelectorAll('.scoring-slider').forEach(s => {
                 const m = s.id.replace('Score', '');
-                const metricData = savedScores[m] || {};
-                scores.scores[m] = {
+                const originalData = currentSavedScores[m] || { original: parseInt(s.value), label: m, description: '' }; 
+                scoresToSave.scores[m] = {
                     current: parseInt(s.value),
-                    original: metricData.original || parseInt(s.value),
-                    label: metricData.label || m,
-                    description: metricData.description || ''
+                    original: originalData.original, // Keep the original value that was loaded
+                    label: originalData.label,
+                    description: originalData.description
                 };
             });
-            
+             // Fetch existing detailed_metrics to save them back alongside slider changes
+            try {
+                const existingScoresResponse = await window.pywebview.api.get_scores(window.currentGuid);
+                if (existingScoresResponse.success && existingScoresResponse.data && existingScoresResponse.data.detailed_metrics) {
+                    scoresToSave.detailed_metrics = existingScoresResponse.data.detailed_metrics;
+                }
+            } catch (fetchError) {
+                console.error('Could not fetch existing detailed_metrics for saving:', fetchError);
+                // Fallback: do not include detailed_metrics or include an empty object
+                scoresToSave.detailed_metrics = {}; 
+            }
+
             // Save to backend
             try {
-                const response = await window.pywebview.api.save_scores(window.currentGuid, scores);
+                const response = await window.pywebview.api.save_scores(window.currentGuid, scoresToSave);
                 if (!response.success) {
                     console.error('Error saving scores:', response.error);
                 }
@@ -1564,43 +1596,136 @@ async function initializeScoring() {
 }
 
 function updateDetailedMetrics(detailedMetrics) {
+    console.log("updateDetailedMetrics called with (detailedMetrics):", detailedMetrics ? JSON.parse(JSON.stringify(detailedMetrics)) : "undefined/null");
+
     // Update Heart Rate metrics
-    const hrMetrics = detailedMetrics.heart_rate_metrics?.current || {};
-    document.getElementById('avgHR').textContent = `${hrMetrics.avg_hr?.toFixed(0) || '--'} BPM`;
-    document.getElementById('hrVariability').textContent = `${hrMetrics.hr_variability?.toFixed(1) || '--'} BPM`;
-    document.getElementById('spikeCount').textContent = hrMetrics.spike_count || '--';
+    const hrMetrics = detailedMetrics?.heart_rate_metrics?.current || {};
+    const avgHRElement = document.getElementById('avgHR');
+    if (avgHRElement) avgHRElement.textContent = `${hrMetrics.avg_hr?.toFixed(0) || '--'} BPM`;
+    const hrVariabilityElement = document.getElementById('hrVariability');
+    if (hrVariabilityElement) hrVariabilityElement.textContent = `${hrMetrics.hr_variability?.toFixed(1) || '--'} BPM`;
+    const spikeCountElement = document.getElementById('spikeCount');
+    if (spikeCountElement) spikeCountElement.textContent = hrMetrics.spike_count || '--';
 
     // Update Pitch metrics
-    const pitchRanges = detailedMetrics.pitch_ranges?.current || {};
+    const pitchRanges = detailedMetrics?.pitch_ranges?.current || {};
     const pitchDetails = document.getElementById('pitchDetails');
     if (pitchDetails) {
-        pitchDetails.innerHTML = Object.entries(pitchRanges)
-            .map(([speaker, range]) => `
-                <div class="detail-item">
-                    <span class="detail-label">Speaker ${speaker}:</span>
-                    <span class="detail-value">${range.toFixed(1)} Hz</span>
-                </div>
-            `).join('');
+        if (Object.keys(pitchRanges).length > 0) {
+            pitchDetails.innerHTML = Object.entries(pitchRanges)
+                .map(([speaker, rangeData]) => {
+                    // Assuming rangeData could be a single number or an array/object like [min, max] or {pitch: val}
+                    let displayValue = '-- Hz';
+                    if (typeof rangeData === 'number') {
+                        displayValue = `${rangeData.toFixed(1)} Hz`;
+                    } else if (Array.isArray(rangeData) && rangeData.length === 2) {
+                         // If it's an array like [fmin, fmax], you might want to display both or an average
+                        displayValue = `Range: ${rangeData[0].toFixed(1)} - ${rangeData[1].toFixed(1)} Hz`;
+                    } else if (typeof rangeData === 'object' && rangeData !== null && rangeData.pitch !== undefined) {
+                        displayValue = `${parseFloat(rangeData.pitch).toFixed(1)} Hz`;
+                    } else if (typeof rangeData === 'object' && rangeData !== null && rangeData.f0_mean !== undefined ) { // From potential future librosa output
+                        displayValue = `${parseFloat(rangeData.f0_mean).toFixed(1)} Hz (mean)`;
+                    }
+                    return `
+                        <div class="detail-item">
+                            <span class="detail-label">${speaker.replace(/_/g, ' ')}:</span>
+                            <span class="detail-value">${displayValue}</span>
+                        </div>`;
+                }).join('');
+        } else {
+            pitchDetails.innerHTML = '<p>No pitch data available.</p>';
+        }
     }
 
+
     // Update Speech Rate metrics
-    const speechRates = detailedMetrics.speech_rates?.current || {};
+    const speechRates = detailedMetrics?.speech_rates?.current || {};
     const speechRateDetails = document.getElementById('speechRateDetails');
     if (speechRateDetails) {
-        speechRateDetails.innerHTML = Object.entries(speechRates)
-            .map(([speaker, rate]) => `
-                <div class="detail-item">
-                    <span class="detail-label">Speaker ${speaker}:</span>
-                    <span class="detail-value">${rate.toFixed(1)} WPM</span>
-                </div>
-            `).join('');
+        if (Object.keys(speechRates).length > 0) {
+            speechRateDetails.innerHTML = Object.entries(speechRates)
+                .map(([speaker, rate]) => `
+                    <div class="detail-item">
+                        <span class="detail-label">${speaker.replace(/_/g, ' ')}:</span>
+                        <span class="detail-value">${parseFloat(rate).toFixed(1)} WPM</span>
+                    </div>
+                `).join('');
+        } else {
+            speechRateDetails.innerHTML = '<p>No speech rate data available.</p>';
+        }
     }
 
     // Update Silence metrics
-    const silenceMetrics = detailedMetrics.silence_metrics?.current || {};
-    document.getElementById('totalSilence').textContent = `${silenceMetrics.total_silence?.toFixed(1) || '--'} s`;
-    document.getElementById('silenceRatio').textContent = `${(silenceMetrics.silence_ratio * 100)?.toFixed(1) || '--'}%`;
-    document.getElementById('avgSilence').textContent = `${silenceMetrics.avg_silence?.toFixed(1) || '--'} s`;
+    const silenceMetrics = detailedMetrics?.silence_metrics?.current || {};
+    const totalSilenceEl = document.getElementById('totalSilence');
+    if (totalSilenceEl) totalSilenceEl.textContent = `${silenceMetrics.total_silence?.toFixed(1) || '--'} s`;
+    const silenceRatioEl = document.getElementById('silenceRatio');
+    if (silenceRatioEl) silenceRatioEl.textContent = `${(silenceMetrics.silence_ratio * 100)?.toFixed(1) || '--'}%`;
+    const avgSilenceEl = document.getElementById('avgSilence');
+    if (avgSilenceEl) avgSilenceEl.textContent = `${silenceMetrics.avg_silence?.toFixed(1) || '--'} s`;
+
+    // Update Sentiment Analysis metrics
+    const sentimentContainer = document.getElementById('sentimentAnalysisData');
+    if (!sentimentContainer) {
+        console.error("Sentiment container 'sentimentAnalysisData' not found!");
+    } else {
+        // More robust check for the presence and structure of sentiment data
+        if (detailedMetrics && detailedMetrics.sentiment_analysis && detailedMetrics.sentiment_analysis.current) {
+            const sentimentData = detailedMetrics.sentiment_analysis.current;
+            console.log("Sentiment data to display (sentiment_analysis.current):", sentimentData ? JSON.parse(JSON.stringify(sentimentData)) : "undefined/null");
+
+            if (typeof sentimentData === 'object' && sentimentData !== null && Object.keys(sentimentData).length > 0) {
+                sentimentContainer.innerHTML = Object.entries(sentimentData)
+                    .map(([speaker, emotions]) => {
+                        let speakerHtml = `<div class="speaker-sentiment-details mb-3">
+                                             <h5>${speaker.replace(/_/g, ' ')}</h5><ul>`;
+                        if (emotions && typeof emotions === 'object') {
+                            const emotionOrder = ['joy', 'sadness', 'love', 'anger', 'fear', 'surprise'];
+                            emotionOrder.forEach(emotionKey => {
+                                 const score = emotions[emotionKey];
+                                 speakerHtml += `<li>${emotionKey.charAt(0).toUpperCase() + emotionKey.slice(1)}: ${score !== undefined && score !== null ? parseFloat(score).toFixed(3) : 'N/A'}</li>`;
+                            });
+
+                            speakerHtml += `<li class="mt-2"><strong>Dominant Emotion: ${emotions.dominant_emotion || 'N/A'}</strong></li>`;
+                            if (emotions.segments_analyzed !== undefined) {
+                                speakerHtml += `<li>Segments Analyzed: ${emotions.segments_analyzed}</li>`;
+                            }
+                        } else {
+                            speakerHtml += '<li>No specific emotion data found for this speaker.</li>';
+                        }
+                        speakerHtml += `</ul></div>`;
+                        return speakerHtml;
+                    }).join('');
+            } else {
+                console.log("Sentiment data (sentiment_analysis.current) is empty or not an object. Displaying default message.");
+                sentimentContainer.innerHTML = '<p>No sentiment data processed for this video. Click "Load/Process Full Analytics" to generate it.</p>';
+            }
+        } else {
+            console.log("Path to sentiment data (detailedMetrics.sentiment_analysis.current) is invalid. Full detailedMetrics.sentiment_analysis:", detailedMetrics ? detailedMetrics.sentiment_analysis : "undefined/null");
+            sentimentContainer.innerHTML = '<p>Sentiment data not found or structure is incorrect. Click "Load/Process Full Analytics" to generate it.</p>';
+        }
+    }
+}
+
+// New or Modified function to update main score sliders (called by initializeScoring and analytics button)
+function updateMainScoresUI(scoresData) {
+    const sliders = document.querySelectorAll('.scoring-slider');
+    sliders.forEach(slider => {
+        const metricKey = slider.id.replace('Score', '');
+        const metricItem = slider.closest('.metric-item');
+        const metricValueDisplay = metricItem.querySelector('.metric-value');
+        const sliderValueDisplay = metricItem.querySelector('.slider-value'); // Assuming this exists
+        const metricLabel = metricItem.querySelector('label');
+
+        const scoreInfo = scoresData[metricKey] || {};
+        const currentValue = scoreInfo.current !== undefined ? scoreInfo.current : 0;
+
+        slider.value = currentValue;
+        if (metricValueDisplay) metricValueDisplay.textContent = `${currentValue}%`;
+        if (sliderValueDisplay) sliderValueDisplay.textContent = scoreInfo.description || 'Adjust to score';
+        if (metricLabel && scoreInfo.label) metricLabel.textContent = scoreInfo.label;
+        if (metricLabel && scoreInfo.description) metricLabel.title = scoreInfo.description; // Tooltip
+    });
 }
 
 // Initialize diarization functionality
