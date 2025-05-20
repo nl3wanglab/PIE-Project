@@ -19,14 +19,17 @@ This tool provides comprehensive analysis of parent-child interactions by:
 - GPU recommended for faster processing (CUDA or MPS compatible)
 
 ### Software Requirements
-- Python 3.8 or newer
+- Python 3.11.7 (required - other versions may cause compatibility issues)
 - Internet connection for initial setup
 - Web browser (Chrome, Firefox, or Safari recommended)
 
 ## Installation Guide
 
 ### Step 1: Prepare Your System
-1. Install Python 3.8 or newer from [python.org](https://python.org)
+1. Install Python 3.11.7 from [python.org](https://python.org/downloads/release/python-3117/)
+   - For Windows: Download and run the Windows installer (64-bit)
+   - For Mac: Download and run the macOS installer
+   - For Linux: Use your package manager or build from source
 2. Ensure pip (Python package manager) is installed
 3. Download or clone this repository to your computer
 
