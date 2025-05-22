@@ -183,7 +183,6 @@ The system will:
 ### 5. Saving and Exporting
 - All data is automatically saved
 - Results can be exported for further analysis
-- Notes can be added to specific segments
 
 ## Troubleshooting
 
