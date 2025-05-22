@@ -23,6 +23,21 @@ This tool provides comprehensive analysis of parent-child interactions by:
 - Internet connection for initial setup
 - Web browser (Chrome, Firefox, or Safari recommended)
 
+### Mac-Specific Requirements
+- Developer mode enabled in System Settings
+- Xcode Command Line Tools installed (run `xcode-select --install` in Terminal)
+- Accept Xcode license agreement after installation
+
+#### Updating Xcode
+1. Open the App Store, search for Xcode, and click Update if available.
+2. Alternatively, download the latest version from [developer.apple.com/download](https://developer.apple.com/download)
+
+#### Installing Xcode Command Line Tools
+Run the following command in Terminal:
+```bash
+xcode-select --install
+```
+
 ## Installation Guide
 
 ### Step 1: Prepare Your System
