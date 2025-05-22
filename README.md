@@ -14,9 +14,9 @@ This tool provides comprehensive analysis of parent-child interactions by:
 ## Technical Requirements
 
 ### Hardware Requirements
-- Computer with Windows, Mac, or Linux
+- Mac computer
 - Minimum 8GB RAM (16GB recommended)
-- GPU recommended for faster processing (CUDA or MPS compatible)
+- GPU recommended for faster processing (MPS compatible)
 
 ### Software Requirements
 - Python 3.11.7 (required - other versions may cause compatibility issues)
@@ -27,22 +27,15 @@ This tool provides comprehensive analysis of parent-child interactions by:
 
 ### Step 1: Prepare Your System
 1. Install Python 3.11.7 from [python.org](https://python.org/downloads/release/python-3117/)
-   - For Windows: Download and run the Windows installer (64-bit)
-   - For Mac: Download and run the macOS installer
-   - For Linux: Use your package manager or build from source
+   - Download and run the macOS installer
 2. Ensure pip (Python package manager) is installed
 3. Download or clone this repository to your computer
 
 ### Step 2: Set Up Python Environment
-1. Open a terminal/command prompt
+1. Open Terminal
 2. Navigate to the project directory
 3. Create a virtual environment:
    ```bash
-   # On Windows
-   python -m venv venv
-   venv\Scripts\activate
-
-   # On Mac/Linux
    python -m venv venv
    source venv/bin/activate
    ```
@@ -84,9 +77,43 @@ This tool provides comprehensive analysis of parent-child interactions by:
 - Click "Upload Video" in the interface
 - Select your video file (supported formats: MP4, AVI, MOV, MKV, WMV)
 - Choose analysis accuracy:
-  - Fast: Quick results, lower accuracy
-  - Balanced: Good speed and accuracy
-  - Accurate: Best results, slower processing
+  - Fast (tiny model):
+    - Model size: 39M parameters
+    - Fastest processing time
+    - Basic transcription accuracy
+    - Best for quick initial analysis
+    - Suitable for clear audio with minimal background noise
+  
+  - Balanced (base model):
+    - Model size: 74M parameters
+    - Moderate processing time
+    - Good transcription accuracy
+    - Best for most use cases
+    - Handles moderate background noise well
+  
+  - Accurate (small model):
+    - Model size: 244M parameters
+    - Longer processing time
+    - High transcription accuracy
+    - Good for detailed analysis
+    - Handles complex audio well
+  
+  - High Accuracy (medium model):
+    - Model size: 769M parameters
+    - Extended processing time
+    - Very high transcription accuracy
+    - Best for research or detailed analysis
+    - Excellent at handling complex audio with background noise
+  
+  - Maximum Accuracy (large model):
+    - Model size: 1.5B parameters
+    - Longest processing time
+    - Highest transcription accuracy
+    - Best for critical analysis
+    - Superior at handling challenging audio conditions
+    - Recommended for final analysis or important recordings
+
+Note: Processing time will vary based on video length and your computer's specifications. Larger models require more RAM and GPU memory.
 
 ### 2. Processing Your Video
 The system will:
@@ -97,9 +124,20 @@ The system will:
 5. Generate initial metrics
 
 ### 3. Adding Heart Rate Data (Optional)
-1. Prepare a CSV file with columns:
-   - parent: Parent's heart rate in BPM
-   - child: Child's heart rate in BPM
+1. Prepare a CSV file with the following format:
+   ```csv
+   parent,child
+   75,82
+   76,83
+   77,82
+   78,81
+   ```
+   Required columns:
+   - `parent`: Parent's heart rate in BPM (beats per minute)
+   - `child`: Child's heart rate in BPM (beats per minute)
+
+   Note: Each row represents a 1-second interval. The system will automatically assign timestamps based on the order of the data points.
+
 2. Click "Upload Heart Rate Data"
 3. Select your CSV file
 4. The system will synchronize the data with the video
@@ -180,9 +218,3 @@ The system will:
 2. Create a feature branch
 3. Make your changes
 4. Submit a pull request
-
-## License
-[Specify your license here]
-
-## Support
-For support, please [specify contact information or support channels]
