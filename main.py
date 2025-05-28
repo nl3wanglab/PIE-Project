@@ -295,46 +295,58 @@ class API:
             logging.error(f"Error reading pure transcript: {e}")
             return {"success": False, "error": str(e)}
     
-    def get_diarized_transcript(self, video_name):
+    def get_diarized_transcript(self, guid):
+        """Get diarized transcript with speaker mapping for display"""
         try:
-            transcript_path = os.path.join("diarization_transcript.txt")
+            # Try to load diarization file first
+            diarization_path = os.path.join(UPLOAD_FOLDER, f"{guid}_diarization.json")
+            speaker_mapping = {"SPEAKER_00": "Parent", "SPEAKER_01": "Child"}  # Default mapping
+            
+            if os.path.exists(diarization_path):
+                with open(diarization_path, 'r') as f:
+                    diarization_data = json.load(f)
+                    # Load speaker mapping if it exists
+                    if 'speaker_mapping' in diarization_data:
+                        speaker_mapping = diarization_data['speaker_mapping']
+                    return {
+                        "success": True, 
+                        "segments": diarization_data.get('segments', []),
+                        "speaker_mapping": speaker_mapping
+                    }
+            
+            # Fallback: Load from transcript file
+            transcript_path = os.path.join(UPLOAD_FOLDER, 'transcripts', f"{guid}_transcript.json")
             if os.path.exists(transcript_path):
-                with open(transcript_path, 'r', encoding='utf-8') as f:
-                    # Parse the diarization transcript into segments
-                    segments = []
-                    current_segment = None
+                with open(transcript_path, 'r') as f:
+                    transcript_data = json.load(f)
                     
-                    for line in f:
-                        line = line.strip()
-                        if line:
-                            if ' - ' in line and ': Speaker' in line:
-                                # New time segment
-                                if current_segment:
-                                    segments.append(current_segment)
-                                
-                                # Parse the timestamp line
-                                parts = line.split(': Speaker ')
-                                time_range = parts[0]
-                                speaker = parts[1]
-                                
-                                current_segment = {
-                                    "start": time_range.split(' - ')[0],
-                                    "end": time_range.split(' - ')[1],
-                                    "speaker": speaker,
-                                    "text": ""
-                                }
-                            elif line.startswith('Transcription:'):
-                                if current_segment:
-                                    current_segment["text"] = line.split(':', 1)[1].strip()
-                
-                    if current_segment:
-                        segments.append(current_segment)
-                
-                    return {"success": True, "segments": segments}
-            else:
-                return {"success": False, "error": "Diarized transcript file not found"}
+                if 'diarized_segments' in transcript_data:
+                    # Ensure consistent speaker IDs
+                    segments = []
+                    for segment in transcript_data['diarized_segments']:
+                        normalized_segment = {
+                            "start": segment.get('start', 0),
+                            "end": segment.get('end', 0),
+                            "speaker": segment.get('speaker', 'SPEAKER_00'),
+                            "text": segment.get('text', '')
+                        }
+                        # Normalize any legacy speaker IDs
+                        if normalized_segment['speaker'] in ['PARENT', 'Parent']:
+                            normalized_segment['speaker'] = 'SPEAKER_00'
+                        elif normalized_segment['speaker'] in ['CHILD', 'Child']:
+                            normalized_segment['speaker'] = 'SPEAKER_01'
+                        segments.append(normalized_segment)
+                    
+                    return {
+                        "success": True, 
+                        "segments": segments,
+                        "speaker_mapping": speaker_mapping
+                    }
+            
+            return {"success": False, "error": "No diarized transcript found"}
+            
         except Exception as e:
-            logging.error(f"Error reading diarized transcript: {e}")
+            logging.error(f"Error loading diarized transcript for {guid}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     def delete_video(self, guid):
@@ -609,6 +621,8 @@ class API:
             if 'detailed_metrics' in scores_from_payload and isinstance(scores_from_payload['detailed_metrics'], dict):
                 # Metrics that can be manually overwritten (keep original/current structure)
                 overwritable_metrics = {'turn_balance'}
+                # Metrics with special handling for complex structures
+                special_handling_metrics = {'sentiment_analysis'}
                 
                 for metric_key, new_data_for_metric in scores_from_payload['detailed_metrics'].items():
                     logging.debug(f"Processing detailed metric '{metric_key}'. New data (first 200 chars): {str(new_data_for_metric)[:200]}")
@@ -632,6 +646,20 @@ class API:
                             logging.warning(f"Detailed metric '{metric_key}': Missing 'original' in new data. Set 'original' to current value.")
 
                         existing_scores['detailed_metrics'][metric_key]['current'] = new_data_for_metric.get('current', existing_scores['detailed_metrics'][metric_key].get('original', {}))
+                    
+                    elif metric_key in special_handling_metrics:
+                        # Handle sentiment analysis with its complex structure
+                        if metric_key == 'sentiment_analysis':
+                            # Update all the sentiment analysis fields
+                            if 'score' in new_data_for_metric:
+                                existing_scores['detailed_metrics'][metric_key]['score'] = new_data_for_metric['score']
+                            if 'chronological_emotions' in new_data_for_metric:
+                                existing_scores['detailed_metrics'][metric_key]['chronological_emotions'] = new_data_for_metric['chronological_emotions']
+                                logging.info(f"Saved {len(new_data_for_metric['chronological_emotions'])} chronological emotions for {guid}")
+                            if 'speaker_summaries' in new_data_for_metric:
+                                existing_scores['detailed_metrics'][metric_key]['speaker_summaries'] = new_data_for_metric['speaker_summaries']
+                                logging.info(f"Saved speaker summaries for {len(new_data_for_metric['speaker_summaries'])} speakers for {guid}")
+                    
                     else:
                         # Handle non-overwritable metrics with simple score structure
                         if 'score' in new_data_for_metric:
@@ -789,18 +817,44 @@ class API:
         return {"success": True}
 
     def save_diarization(self, guid, segments):
-        """Save speaker assignments for a video"""
+        """Save speaker assignments for a video with consistent internal speaker IDs"""
         try:
-            # Create diarization directory if it doesn't exist
-            diarization_dir = os.path.join(UPLOAD_FOLDER, 'diarization')
-            os.makedirs(diarization_dir, exist_ok=True)
+            # Normalize speaker IDs to consistent format (SPEAKER_00, SPEAKER_01)
+            def normalize_speaker_id(speaker_id):
+                if speaker_id in ['PARENT', 'Parent']:
+                    return 'SPEAKER_00'
+                elif speaker_id in ['CHILD', 'Child']:
+                    return 'SPEAKER_01'
+                else:
+                    return speaker_id
             
-            # Save to diarization file
-            diarization_path = os.path.join(diarization_dir, f"{guid}_diarization.json")
+            # Process segments and normalize speaker IDs
+            normalized_segments = []
+            for segment in segments:
+                normalized_segment = {
+                    "start": float(segment.get("start", 0)),
+                    "end": float(segment.get("end", 0)),
+                    "speaker": normalize_speaker_id(segment.get("speaker", "SPEAKER_00")),
+                    "text": str(segment.get("text", ""))
+                }
+                normalized_segments.append(normalized_segment)
+            
+            # Create diarization data structure
+            diarization_data = {
+                "segments": normalized_segments,
+                "timestamp": datetime.datetime.now().isoformat(),
+                "speaker_mapping": {
+                    "SPEAKER_00": "Parent",  # Default mapping
+                    "SPEAKER_01": "Child"
+                }
+            }
+            
+            # Save diarization file
+            diarization_path = os.path.join(UPLOAD_FOLDER, f"{guid}_diarization.json")
             with open(diarization_path, 'w') as f:
-                json.dump({"segments": segments}, f)
+                json.dump(diarization_data, f, indent=2)
             
-            # Update the transcript file with new speaker assignments
+            # Update the transcript file with new speaker assignments (keep normalized IDs)
             transcript_path = os.path.join(UPLOAD_FOLDER, 'transcripts', f"{guid}_transcript.json")
             if os.path.exists(transcript_path):
                 with open(transcript_path, 'r') as f:
@@ -808,21 +862,22 @@ class API:
                 
                 # Update speaker assignments in diarized segments
                 if 'diarized_segments' in transcript_data:
-                    for segment in transcript_data['diarized_segments']:
-                        # Find matching segment from saved diarization
-                        matching_segment = next((s for s in segments if 
-                            abs(s['start'] - segment['start']) < 0.1 and 
-                            abs(s['end'] - segment['end']) < 0.1), None)
-                        if matching_segment:
-                            segment['speaker'] = matching_segment['speaker']
+                    for transcript_segment in transcript_data['diarized_segments']:
+                        # Find matching segment by time
+                        for normalized_segment in normalized_segments:
+                            if (abs(transcript_segment['start'] - normalized_segment['start']) < 0.1 and 
+                                abs(transcript_segment['end'] - normalized_segment['end']) < 0.1):
+                                transcript_segment['speaker'] = normalized_segment['speaker']
                 
                 # Save updated transcript
                 with open(transcript_path, 'w') as f:
-                    json.dump(transcript_data, f)
+                    json.dump(transcript_data, f, indent=2)
             
-            return {"success": True}
+            logging.info(f"Saved diarization for {guid} with {len(normalized_segments)} segments")
+            return {"success": True, "message": f"Saved {len(normalized_segments)} segments with normalized speaker IDs"}
+            
         except Exception as e:
-            print(f"Error saving diarization: {e}")
+            logging.error(f"Error saving diarization for {guid}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     def save_notes(self, guid, notes):
@@ -916,6 +971,53 @@ class API:
             
         except Exception as e:
             logging.error(f"Error in debug_test_notes: {str(e)}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    def update_speaker_mapping(self, guid, speaker_mapping):
+        """Update speaker mapping (Parent/Child labels) for a video"""
+        try:
+            # Validate mapping
+            if not isinstance(speaker_mapping, dict):
+                return {"success": False, "error": "Invalid speaker mapping format"}
+            
+            # Ensure we have mappings for both speakers
+            if 'SPEAKER_00' not in speaker_mapping or 'SPEAKER_01' not in speaker_mapping:
+                return {"success": False, "error": "Missing speaker mappings"}
+            
+            # Load existing diarization data or create new
+            diarization_path = os.path.join(UPLOAD_FOLDER, f"{guid}_diarization.json")
+            
+            if os.path.exists(diarization_path):
+                with open(diarization_path, 'r') as f:
+                    diarization_data = json.load(f)
+            else:
+                # Create new diarization data with segments from transcript
+                transcript_path = os.path.join(UPLOAD_FOLDER, 'transcripts', f"{guid}_transcript.json")
+                if os.path.exists(transcript_path):
+                    with open(transcript_path, 'r') as f:
+                        transcript_data = json.load(f)
+                    
+                    segments = transcript_data.get('diarized_segments', [])
+                    diarization_data = {
+                        "segments": segments,
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }
+                else:
+                    return {"success": False, "error": "No transcript found to create speaker mapping"}
+            
+            # Update speaker mapping
+            diarization_data['speaker_mapping'] = speaker_mapping
+            diarization_data['mapping_updated'] = datetime.datetime.now().isoformat()
+            
+            # Save updated diarization data
+            with open(diarization_path, 'w') as f:
+                json.dump(diarization_data, f, indent=2)
+            
+            logging.info(f"Updated speaker mapping for {guid}: {speaker_mapping}")
+            return {"success": True, "message": "Speaker mapping updated successfully"}
+            
+        except Exception as e:
+            logging.error(f"Error updating speaker mapping for {guid}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
 def main():

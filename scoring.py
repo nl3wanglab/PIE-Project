@@ -210,174 +210,6 @@ class ScoringSystem:
             'avg_silence': np.mean(silences) if silences else 0
         }
     
-    def analyze_sentiment_for_speakers(self, diarization_data: List[Dict]) -> Dict[str, Dict[str, float]]:
-        """Analyze sentiment for each speaker's segments using a Hugging Face model."""
-        if not self.sentiment_classifier:
-            logging.warning("Sentiment classifier not available.")
-            return {}
-
-        speaker_sentiments = {}
-        
-        for segment in diarization_data:
-            speaker = segment.get('speaker', 'unknown')
-            text = segment.get('text', '')
-            
-            if not text.strip():
-                continue
-
-            try:
-                # The model returns a list of lists of dictionaries
-                predictions = self.sentiment_classifier(text)
-                if predictions and predictions[0]:
-                    # Aggregate scores for the current segment
-                    segment_scores = {p['label']: p['score'] for p in predictions[0]}
-                    
-                    if speaker not in speaker_sentiments:
-                        speaker_sentiments[speaker] = {label: [] for label in segment_scores.keys()}
-                    
-                    for label, score in segment_scores.items():
-                        speaker_sentiments[speaker][label].append(score)
-            except Exception as e:
-                logging.error(f"Error during sentiment analysis for segment '{text[:30]}...': {e}")
-                continue
-        
-        # Calculate average sentiment scores for each speaker
-        averaged_speaker_sentiments = {}
-        for speaker, sentiments in speaker_sentiments.items():
-            averaged_speaker_sentiments[speaker] = {
-                label: np.mean(scores) if scores else 0.0 
-                for label, scores in sentiments.items()
-            }
-            # Add a dominant emotion
-            if averaged_speaker_sentiments[speaker]:
-                 averaged_speaker_sentiments[speaker]['dominant_emotion'] = max(
-                     averaged_speaker_sentiments[speaker].items(), key=lambda item: item[1]
-                 )[0]
-
-
-        return averaged_speaker_sentiments
-
-    def calculate_all_scores(self, audio_file_path: str, full_transcript_data: Optional[Dict], diarization_data_content: Optional[Dict], hr_data: Optional[List[Dict]]) -> Dict:
-        # Renamed diarization_data_content to local_diarization_data for clarity within this function
-        local_diarization_data = diarization_data_content
-        logging.info(f"CALC_ALL_SCORES_V3: Starting for audio file: {audio_file_path}")
-
-        # This is the dictionary that will be returned under the 'data' key on success
-        all_scores_payload = {
-            "scores": {
-                # Initialize main scores
-                "turn_balance": {"current": 0, "original": 0, "label": "Turn Balance", "description": "Balance of speaking time."},
-                "engagement_score": {"current": 0, "original": 0, "label": "Engagement Score", "description": "Overall engagement metric."},
-                "clarity_score": {"current": 0, "original": 0, "label": "Clarity Score", "description": "Overall speech clarity metric."}
-            },
-            "detailed_metrics": {
-                "turn_balance": {"current": {}, "original": {}, "label": "Turn Balance Details", "description": "Detailed turn balance data."},
-                "heart_rate_metrics": {"score": {}, "label": "Heart Rate Analysis", "description": "Metrics from HR data."},
-                "pitch_ranges": {"score": {}, "label": "Pitch Variation", "description": "Pitch range per speaker."},
-                "speech_rates": {"score": {}, "label": "Speech Rate", "description": "Words per minute per speaker."},
-                "silence_metrics": {"score": {}, "label": "Silence Analysis", "description": "Metrics on silence in conversation."},
-                "sentiment_analysis": {"score": {}, "label": "Sentiment Analysis", "description": "Emotion detection per speaker."}
-            },
-            "timestamp": str(datetime.datetime.now())
-        }
-
-        try:
-            logging.info("CALC_ALL_SCORES_V3: TRY_BLOCK_START")
-            y_audio, sr_audio = None, None
-            total_audio_duration = 0
-
-            if os.path.exists(audio_file_path):
-                try:
-                    y_audio, sr_audio = librosa.load(audio_file_path, sr=None, mono=True)
-                    total_audio_duration = librosa.get_duration(y=y_audio, sr=sr_audio)
-                    all_scores_payload["audio_duration"] = total_audio_duration
-                    logging.info(f"CALC_ALL_SCORES_V3: Audio loaded. Duration: {total_audio_duration}s")
-                except Exception as e:
-                    logging.error(f"CALC_ALL_SCORES_V3: Error loading audio {audio_file_path}: {e}")
-                    # Not returning error yet, some scores might not need audio
-
-            # Determine diarization source
-            current_diarization_source_for_calcs = None
-            diarization_source_type = "NONE"
-
-            if local_diarization_data and "segments" in local_diarization_data and local_diarization_data["segments"]:
-                current_diarization_source_for_calcs = local_diarization_data
-                diarization_source_type = "DEDICATED_DIARIZATION_FILE"
-            elif full_transcript_data and "diarized_segments" in full_transcript_data and full_transcript_data["diarized_segments"]:
-                current_diarization_source_for_calcs = {"segments": full_transcript_data["diarized_segments"]}
-                diarization_source_type = "FULL_TRANSCRIPT"
-            
-            logging.info(f"CALC_ALL_SCORES_V3: Using {diarization_source_type} diarization. Segments: {len(current_diarization_source_for_calcs.get('segments', [])) if current_diarization_source_for_calcs else 0}")
-
-            # Ensure segments_for_calc is always a list
-            segments_for_calc = current_diarization_source_for_calcs.get("segments", []) if current_diarization_source_for_calcs else []
-
-            # Calculate metrics that depend on diarization_data
-            if segments_for_calc:
-                # Verbal Engagement (Turn Balance)
-                balance_ratio_float = self.calculate_verbal_engagement(segments_for_calc)
-                all_scores_payload["detailed_metrics"]["turn_balance"]["current"] = {"balance_ratio": balance_ratio_float}
-                all_scores_payload["detailed_metrics"]["turn_balance"]["original"] = {"balance_ratio": balance_ratio_float}
-                tb_percentage = (1 - abs(balance_ratio_float - 0.5) * 2) * 100 # 0.5 is perfect balance
-                all_scores_payload["scores"]["turn_balance"]["current"] = int(round(tb_percentage))
-                all_scores_payload["scores"]["turn_balance"]["original"] = int(round(tb_percentage))
-
-                # Speech Rates
-                calculated_speech_rates_wpm = self.calculate_speech_rate(segments_for_calc, total_audio_duration)
-                all_scores_payload["detailed_metrics"]["speech_rates"]["score"] = calculated_speech_rates_wpm
-                
-                # Silence Metrics
-                silence_metrics_result = self.calculate_silence_metrics(segments_for_calc, total_audio_duration)
-                all_scores_payload["detailed_metrics"]["silence_metrics"]["score"] = silence_metrics_result
-
-                # Pitch Ranges (requires audio loaded)
-                if y_audio is not None and sr_audio is not None:
-                    pitch_ranges_result = self.calculate_pitch_range_per_speaker(y_audio, sr_audio, {"segments": segments_for_calc})
-                    all_scores_payload["detailed_metrics"]["pitch_ranges"]["score"] = pitch_ranges_result
-                else:
-                    logging.info("CALC_ALL_SCORES_V3: Skipping pitch range calculation as audio was not loaded.")
-
-                # Sentiment Analysis
-                sentiment_results = self.calculate_sentiment_analysis({"segments": segments_for_calc}) # Pass as dict
-                all_scores_payload["detailed_metrics"]["sentiment_analysis"]["score"] = sentiment_results
-            else:
-                logging.warning("CALC_ALL_SCORES_V3: No valid segments found in any diarization source. Skipping segment-dependent metrics.")
-
-            # HR Metrics (if HR data is provided)
-            if hr_data:
-                hr_metrics_result = self.calculate_hr_metrics(hr_data, total_audio_duration)
-                all_scores_payload["detailed_metrics"]["heart_rate_metrics"]["score"] = hr_metrics_result
-            else:
-                logging.info("CALC_ALL_SCORES_V3: Skipping HR metrics as no HR data was provided.")
-
-            # Composite Scores
-            all_scores_payload["scores"]["engagement_score"]["current"] = int(round(self._calculate_composite_engagement(all_scores_payload["detailed_metrics"])))
-            all_scores_payload["scores"]["engagement_score"]["original"] = all_scores_payload["scores"]["engagement_score"]["current"]
-            all_scores_payload["scores"]["clarity_score"]["current"] = int(round(self._calculate_composite_clarity(all_scores_payload["detailed_metrics"])))
-            all_scores_payload["scores"]["clarity_score"]["original"] = all_scores_payload["scores"]["clarity_score"]["current"]
-            
-            # Convert all numpy types in the payload to standard Python types before returning
-            all_scores_payload_python_types = convert_numpy_types_to_python(all_scores_payload)
-            logging.info(f"CALC_ALL_SCORES_V3: TRY_BLOCK_SUCCESS. Data (first 200 chars of converted): {str(all_scores_payload_python_types)[:200]}")
-            return {"success": True, "data": all_scores_payload_python_types}
-
-        except Exception as e:
-            logging.error(f"CALC_ALL_SCORES_V3: TRY_BLOCK_ERROR: {e}", exc_info=True)
-            # Convert the potentially incomplete payload as well before returning error
-            error_payload_python_types = convert_numpy_types_to_python(all_scores_payload)
-            return {"success": False, "error": str(e), "data": error_payload_python_types}
-        finally:
-            logging.info(f"CALC_ALL_SCORES_V3: FINALLY_BLOCK - Exiting for {audio_file_path}.")
-    
-    def _save_scores(self, guid: str, scores: Dict):
-        """Save scores to a JSON file"""
-        scores_dir = os.path.join('static', 'uploaded_videos', 'scores')
-        os.makedirs(scores_dir, exist_ok=True)
-        
-        scores_file = os.path.join(scores_dir, f"{guid}_scores.json")
-        with open(scores_file, 'w') as f:
-            json.dump(scores, f, indent=2) 
-
     def calculate_sentiment_analysis(self, diarization_data: Optional[Dict]) -> Dict:
         logging.debug(f"Attempting sentiment analysis. Received diarization_data (first 200 chars): {str(diarization_data)[:200]}")
         if not self.sentiment_classifier:
@@ -396,11 +228,17 @@ class ScoringSystem:
 
         logging.info(f"Processing {len(segments)} segments for sentiment analysis.")
         
+        # Store emotions with each segment chronologically
+        segment_emotions = []
         sentiments_by_speaker = {}
         processed_segments_count = 0
+        
         for segment in segments: # Use the 'segments' variable
             speaker = segment.get("speaker", "Unknown Speaker")
             text = segment.get("text", "")
+            start_time = segment.get("start", 0)
+            end_time = segment.get("end", 0)
+            
             if not text.strip(): # Ensure text is not just whitespace
                 logging.debug(f"Skipping segment by {speaker} due to empty text.")
                 continue
@@ -434,6 +272,18 @@ class ScoringSystem:
                     scores = {p['label']: p['score'] for p in scores_list}
                     dominant_emotion = max(scores, key=scores.get)
                     
+                    # Store emotion data with the segment
+                    segment_emotion = {
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "speaker": speaker,
+                        "text": text,
+                        "emotions": scores,
+                        "dominant_emotion": dominant_emotion
+                    }
+                    segment_emotions.append(segment_emotion)
+                    
+                    # Also keep speaker aggregation for summary statistics
                     if speaker not in sentiments_by_speaker:
                         sentiments_by_speaker[speaker] = {"count": 0, "scores": {label: 0.0 for label in scores.keys()}, "dominant_emotions": []}
                     
@@ -454,7 +304,8 @@ class ScoringSystem:
         elif processed_segments_count > 0:
             logging.info(f"Successfully processed {processed_segments_count} out of {len(segments)} segments for sentiment.")
 
-        final_sentiments = {}
+        # Create speaker summaries for backward compatibility
+        speaker_summaries = {}
         for speaker, data in sentiments_by_speaker.items():
             if data["count"] > 0:
                 avg_scores = {label: score_sum / data["count"] for label, score_sum in data["scores"].items()}
@@ -463,10 +314,16 @@ class ScoringSystem:
                 else:
                     overall_dominant_emotion = "N/A"
                 
-                final_sentiments[speaker] = {**avg_scores, "dominant_emotion": overall_dominant_emotion, "segments_analyzed": data["count"]}
+                speaker_summaries[speaker] = {**avg_scores, "dominant_emotion": overall_dominant_emotion, "segments_analyzed": data["count"]}
         
-        logging.info(f"Final sentiment analysis results: {final_sentiments}")
-        return final_sentiments
+        # Return both chronological segments and speaker summaries
+        result = {
+            "chronological_emotions": segment_emotions,
+            "speaker_summaries": speaker_summaries
+        }
+        
+        logging.info(f"Final sentiment analysis results: chronological segments={len(segment_emotions)}, speakers={len(speaker_summaries)}")
+        return result
 
     def calculate_pitch_range_per_speaker(self, y: np.ndarray, sr: int, diarization_data: Optional[Dict]) -> Dict[str, Tuple[float, float]]:
         pitch_ranges = {}
@@ -545,3 +402,133 @@ class ScoringSystem:
         
         logging.debug(f"Composite clarity: clarity_from_silence={clarity_from_silence}, pitch_contribution={pitch_contribution}")
         return (clarity_from_silence + pitch_contribution) / 2.0 
+
+    def calculate_all_scores(self, audio_file_path: str, full_transcript_data: Optional[Dict], diarization_data_content: Optional[Dict], hr_data: Optional[List[Dict]]) -> Dict:
+        # Renamed diarization_data_content to local_diarization_data for clarity within this function
+        local_diarization_data = diarization_data_content
+        logging.info(f"CALC_ALL_SCORES_V3: Starting for audio file: {audio_file_path}")
+
+        # This is the dictionary that will be returned under the 'data' key on success
+        all_scores_payload = {
+            "scores": {
+                # Initialize main scores with clean structure - no duplicates
+                "turn_balance": {"current": 0, "original": 0, "label": "Turn Balance", "description": "Balance of speaking time."},
+                "engagement_score": {"current": 0, "original": 0, "label": "Engagement Score", "description": "Overall engagement metric."},
+                "clarity_score": {"current": 0, "original": 0, "label": "Clarity Score", "description": "Overall speech clarity metric."}
+            },
+            "detailed_metrics": {
+                "turn_balance": {"current": {}, "original": {}, "label": "Turn Balance Details", "description": "Detailed turn balance data."},
+                "heart_rate_metrics": {"score": {}, "label": "Heart Rate Analysis", "description": "Metrics from HR data."},
+                "pitch_ranges": {"score": {}, "label": "Pitch Variation", "description": "Pitch range per speaker."},
+                "speech_rates": {"score": {}, "label": "Speech Rate", "description": "Words per minute per speaker."},
+                "silence_metrics": {"score": {}, "label": "Silence Analysis", "description": "Metrics on silence in conversation."},
+                "sentiment_analysis": {
+                    "chronological_emotions": [], 
+                    "speaker_summaries": {}, 
+                    "label": "Sentiment Analysis", 
+                    "description": "Emotion detection per speaker and chronologically."
+                }
+            },
+            "timestamp": str(datetime.datetime.now())
+        }
+
+        try:
+            logging.info("CALC_ALL_SCORES_V3: TRY_BLOCK_START")
+            y_audio, sr_audio = None, None
+            total_audio_duration = 0
+
+            if os.path.exists(audio_file_path):
+                try:
+                    y_audio, sr_audio = librosa.load(audio_file_path, sr=None, mono=True)
+                    total_audio_duration = librosa.get_duration(y=y_audio, sr=sr_audio)
+                    all_scores_payload["audio_duration"] = total_audio_duration
+                    logging.info(f"CALC_ALL_SCORES_V3: Audio loaded. Duration: {total_audio_duration}s")
+                except Exception as e:
+                    logging.error(f"CALC_ALL_SCORES_V3: Error loading audio {audio_file_path}: {e}")
+                    # Not returning error yet, some scores might not need audio
+
+            # Determine diarization source
+            current_diarization_source_for_calcs = None
+            diarization_source_type = "NONE"
+
+            if local_diarization_data and "segments" in local_diarization_data and local_diarization_data["segments"]:
+                current_diarization_source_for_calcs = local_diarization_data
+                diarization_source_type = "DEDICATED_DIARIZATION_FILE"
+            elif full_transcript_data and "diarized_segments" in full_transcript_data and full_transcript_data["diarized_segments"]:
+                current_diarization_source_for_calcs = {"segments": full_transcript_data["diarized_segments"]}
+                diarization_source_type = "FULL_TRANSCRIPT"
+            
+            logging.info(f"CALC_ALL_SCORES_V3: Using {diarization_source_type} diarization. Segments: {len(current_diarization_source_for_calcs.get('segments', [])) if current_diarization_source_for_calcs else 0}")
+
+            # Ensure segments_for_calc is always a list
+            segments_for_calc = current_diarization_source_for_calcs.get("segments", []) if current_diarization_source_for_calcs else []
+
+            # Calculate metrics that depend on diarization_data
+            if segments_for_calc:
+                # Verbal Engagement (Turn Balance)
+                balance_ratio_float = self.calculate_verbal_engagement(segments_for_calc)
+                all_scores_payload["detailed_metrics"]["turn_balance"]["current"] = {"balance_ratio": balance_ratio_float}
+                all_scores_payload["detailed_metrics"]["turn_balance"]["original"] = {"balance_ratio": balance_ratio_float}
+                tb_percentage = (1 - abs(balance_ratio_float - 0.5) * 2) * 100 # 0.5 is perfect balance
+                all_scores_payload["scores"]["turn_balance"]["current"] = int(round(tb_percentage))
+                all_scores_payload["scores"]["turn_balance"]["original"] = int(round(tb_percentage))
+
+                # Speech Rates
+                calculated_speech_rates_wpm = self.calculate_speech_rate(segments_for_calc, total_audio_duration)
+                all_scores_payload["detailed_metrics"]["speech_rates"]["score"] = calculated_speech_rates_wpm
+                
+                # Silence Metrics
+                silence_metrics_result = self.calculate_silence_metrics(segments_for_calc, total_audio_duration)
+                all_scores_payload["detailed_metrics"]["silence_metrics"]["score"] = silence_metrics_result
+
+                # Pitch Ranges (requires audio loaded)
+                if y_audio is not None and sr_audio is not None:
+                    pitch_ranges_result = self.calculate_pitch_range_per_speaker(y_audio, sr_audio, {"segments": segments_for_calc})
+                    all_scores_payload["detailed_metrics"]["pitch_ranges"]["score"] = pitch_ranges_result
+                else:
+                    logging.info("CALC_ALL_SCORES_V3: Skipping pitch range calculation as audio was not loaded.")
+
+                # Sentiment Analysis - store in new format
+                sentiment_results = self.calculate_sentiment_analysis({"segments": segments_for_calc}) # Pass as dict
+                if sentiment_results:
+                    all_scores_payload["detailed_metrics"]["sentiment_analysis"]["chronological_emotions"] = sentiment_results.get("chronological_emotions", [])
+                    all_scores_payload["detailed_metrics"]["sentiment_analysis"]["speaker_summaries"] = sentiment_results.get("speaker_summaries", {})
+                    # For backward compatibility, also store speaker summaries in the old score location
+                    all_scores_payload["detailed_metrics"]["sentiment_analysis"]["score"] = sentiment_results.get("speaker_summaries", {})
+            else:
+                logging.warning("CALC_ALL_SCORES_V3: No valid segments found in any diarization source. Skipping segment-dependent metrics.")
+
+            # HR Metrics (if HR data is provided)
+            if hr_data:
+                hr_metrics_result = self.calculate_hr_metrics(hr_data, total_audio_duration)
+                all_scores_payload["detailed_metrics"]["heart_rate_metrics"]["score"] = hr_metrics_result
+            else:
+                logging.info("CALC_ALL_SCORES_V3: Skipping HR metrics as no HR data was provided.")
+
+            # Composite Scores
+            all_scores_payload["scores"]["engagement_score"]["current"] = int(round(self._calculate_composite_engagement(all_scores_payload["detailed_metrics"])))
+            all_scores_payload["scores"]["engagement_score"]["original"] = all_scores_payload["scores"]["engagement_score"]["current"]
+            all_scores_payload["scores"]["clarity_score"]["current"] = int(round(self._calculate_composite_clarity(all_scores_payload["detailed_metrics"])))
+            all_scores_payload["scores"]["clarity_score"]["original"] = all_scores_payload["scores"]["clarity_score"]["current"]
+            
+            # Convert all numpy types in the payload to standard Python types before returning
+            all_scores_payload_python_types = convert_numpy_types_to_python(all_scores_payload)
+            logging.info(f"CALC_ALL_SCORES_V3: TRY_BLOCK_SUCCESS. Data (first 200 chars of converted): {str(all_scores_payload_python_types)[:200]}")
+            return {"success": True, "data": all_scores_payload_python_types}
+
+        except Exception as e:
+            logging.error(f"CALC_ALL_SCORES_V3: TRY_BLOCK_ERROR: {e}", exc_info=True)
+            # Convert the potentially incomplete payload as well before returning error
+            error_payload_python_types = convert_numpy_types_to_python(all_scores_payload)
+            return {"success": False, "error": str(e), "data": error_payload_python_types}
+        finally:
+            logging.info(f"CALC_ALL_SCORES_V3: FINALLY_BLOCK - Exiting for {audio_file_path}.")
+    
+    def _save_scores(self, guid: str, scores: Dict):
+        """Save scores to a JSON file"""
+        scores_dir = os.path.join('static', 'uploaded_videos', 'scores')
+        os.makedirs(scores_dir, exist_ok=True)
+        
+        scores_file = os.path.join(scores_dir, f"{guid}_scores.json")
+        with open(scores_file, 'w') as f:
+            json.dump(scores, f, indent=2) 

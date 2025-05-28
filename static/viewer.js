@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                         updateMainScoresUI(response.data.scores); // Assumes/Creates a function to update main score sliders
                     }
                     if (response.data.detailed_metrics) {
-                        updateDetailedMetrics(response.data.detailed_metrics);
+                        await updateDetailedMetrics(response.data.detailed_metrics);
                     }
                     showMessage('Analytics processed and updated successfully.', 'success');
                 } else {
@@ -112,6 +112,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         const speakerControls = document.querySelector('.speaker-controls');
         const saveChangesBtn = document.getElementById('saveChangesBtn');
         
+        console.log('Switching transcript view to:', type);
+        
         if (type === 'diarized') {
             diarizedBtn.classList.add('active');
             fullBtn.classList.remove('active');
@@ -120,11 +122,22 @@ document.addEventListener('DOMContentLoaded', async function() {
             // Reset edit state when switching to diarized view
             saveChangesBtn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
             saveChangesBtn.disabled = false;
+            console.log('About to initialize diarization functionality...');
+            // Important: Initialize diarization functionality when switching to this view
+            setTimeout(() => {
+                console.log('Initializing diarization functionality now...');
+                initializeDiarization();
+            }, 100); // Small delay to ensure DOM is ready
         } else {
             fullBtn.classList.add('active');
             diarizedBtn.classList.remove('active');
             speakerControls.style.display = 'none';
             loadFullTranscript();
+            // Clear diarization initialization flag when switching away
+            if (saveChangesBtn) {
+                saveChangesBtn.removeAttribute('data-diarization-initialized');
+                console.log('Cleared diarization initialization flag');
+            }
         }
     }
 
@@ -133,34 +146,26 @@ document.addEventListener('DOMContentLoaded', async function() {
         transcriptContent.innerHTML = '<div class="alert alert-info">Loading diarized transcript...</div>';
         
         try {
-            // First try to get the main transcript with diarized segments
-            const response = await window.pywebview.api.get_transcript(window.currentGuid);
-            if (response.success && response.data && response.data.diarized_segments) {
-                // Load any manual speaker assignments
-                const diarizationResponse = await window.pywebview.api.get_diarized_transcript(window.currentGuid);
-                if (diarizationResponse.success && diarizationResponse.data && diarizationResponse.data.segments) {
-                    // Merge manual assignments with original segments
-                    const manualAssignments = diarizationResponse.data.segments;
-                    const segments = response.data.diarized_segments.map(segment => {
-                        // Find matching manual assignment
-                        const manual = manualAssignments.find(m => 
-                            Math.abs(m.start - segment.start) < 0.1 && 
-                            Math.abs(m.end - segment.end) < 0.1
-                        );
-                        if (manual) {
-                            return { ...segment, speaker: manual.speaker };
-                        }
-                        return segment;
-                    });
-                    displayDiarizedTranscript(segments);
-                } else {
-                    displayDiarizedTranscript(response.data.diarized_segments);
+            // Get diarized transcript with speaker mapping
+            const response = await window.pywebview.api.get_diarized_transcript(window.currentGuid);
+            if (response.success && response.segments) {
+                // Update UI labels if speaker mapping is provided
+                if (response.speaker_mapping) {
+                    updateSpeakerLabelsInUI(response.speaker_mapping);
                 }
+                // Display transcript with speaker mapping
+                await displayDiarizedTranscript(response.segments, response.speaker_mapping);
             } else {
-                transcriptContent.innerHTML = `
-                    <div class="alert alert-danger">
-                        Error loading diarized transcript: ${response.error || 'No diarization data available'}
-                    </div>`;
+                // Fallback: Try to get from main transcript
+                const transcriptResponse = await window.pywebview.api.get_transcript(window.currentGuid);
+                if (transcriptResponse.success && transcriptResponse.data && transcriptResponse.data.diarized_segments) {
+                    await displayDiarizedTranscript(transcriptResponse.data.diarized_segments);
+                } else {
+                    transcriptContent.innerHTML = `
+                        <div class="alert alert-danger">
+                            Error loading diarized transcript: ${response.error || 'No diarization data available'}
+                        </div>`;
+                }
             }
         } catch (error) {
             console.error('Error loading diarized transcript:', error);
@@ -168,6 +173,19 @@ document.addEventListener('DOMContentLoaded', async function() {
                 <div class="alert alert-danger">
                     Error loading diarized transcript: ${error}
                 </div>`;
+        }
+    }
+
+    // Function to update speaker labels in the UI
+    function updateSpeakerLabelsInUI(speakerMapping) {
+        const parentLabel = document.querySelector('.parent-label');
+        const childLabel = document.querySelector('.child-label');
+        
+        if (parentLabel && speakerMapping['SPEAKER_00']) {
+            parentLabel.textContent = speakerMapping['SPEAKER_00'];
+        }
+        if (childLabel && speakerMapping['SPEAKER_01']) {
+            childLabel.textContent = speakerMapping['SPEAKER_01'];
         }
     }
 
@@ -187,45 +205,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
             });
         }
-    }
-
-    function displayDiarizedTranscript(segments) {
-        const transcriptContent = document.getElementById('transcriptContent');
-        if (!segments || !segments.length) {
-            transcriptContent.innerHTML = `
-                <div class="alert alert-info">
-                    No diarized segments available.
-                </div>
-            `;
-            return;
-        }
-        
-        transcriptContent.innerHTML = segments.map(segment => `
-            <div class="transcript-segment speaker-${segment.speaker}" 
-                 data-start="${segment.start}" 
-                 data-end="${segment.end}">
-                <div class="speaker-label">Speaker ${segment.speaker}</div>
-                <div class="timestamp">${formatTime(segment.start)} - ${formatTime(segment.end)}</div>
-                <div class="text">${segment.text}</div>
-            </div>
-        `).join('');
-
-        // Add click handlers to segments - only seek, don't play
-        document.querySelectorAll('.transcript-segment').forEach(segment => {
-            segment.addEventListener('click', function() {
-                const startTime = parseFloat(this.dataset.start);
-                const videoPlayer = document.getElementById('videoPlayer');
-                if (videoPlayer) {
-                    videoPlayer.currentTime = startTime;
-                }
-            });
-        });
-    }
-
-    function formatTime(seconds) {
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = Math.floor(seconds % 60);
-        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
 
     // Wait for pywebview to be ready
@@ -1062,7 +1041,7 @@ async function initializeScoring() {
             updateMainScoresUI(currentSavedScores);
             
             // Update detailed metrics section (including sentiment if available)
-            updateDetailedMetrics(detailedMetrics);
+            await updateDetailedMetrics(detailedMetrics);
         } else {
             console.error('Error loading scores:', response.error);
             // Initialize sliders to 0 or default if no scores found
@@ -1143,7 +1122,7 @@ async function initializeScoring() {
     });
 }
 
-function updateDetailedMetrics(detailedMetrics) {
+async function updateDetailedMetrics(detailedMetrics) {
     console.log("updateDetailedMetrics called with (detailedMetrics):", detailedMetrics ? JSON.parse(JSON.stringify(detailedMetrics)) : "undefined/null");
 
     // Update Heart Rate metrics (uses 'score' structure)
@@ -1217,39 +1196,130 @@ function updateDetailedMetrics(detailedMetrics) {
     if (!sentimentContainer) {
         console.error("Sentiment container 'sentimentAnalysisData' not found!");
     } else {
-        // More robust check for the presence and structure of sentiment data
-        if (detailedMetrics && detailedMetrics.sentiment_analysis && detailedMetrics.sentiment_analysis.score) {
-            const sentimentData = detailedMetrics.sentiment_analysis.score;
-            console.log("Sentiment data to display (sentiment_analysis.score):", sentimentData ? JSON.parse(JSON.stringify(sentimentData)) : "undefined/null");
-
-            if (typeof sentimentData === 'object' && sentimentData !== null && Object.keys(sentimentData).length > 0) {
-                sentimentContainer.innerHTML = Object.entries(sentimentData)
-                    .map(([speaker, emotions]) => {
-                        let speakerHtml = `<div class="speaker-sentiment-details mb-3">
-                                             <h5>${speaker.replace(/_/g, ' ')}</h5><ul>`;
+        // Store the detailed metrics globally for use in transcript display
+        window.currentScoresData = { detailed_metrics: detailedMetrics };
+        
+        // Get chronological emotions data if available
+        let chronologicalEmotions = [];
+        if (window.currentScoresData && 
+            window.currentScoresData.detailed_metrics && 
+            window.currentScoresData.detailed_metrics.sentiment_analysis && 
+            window.currentScoresData.detailed_metrics.sentiment_analysis.chronological_emotions) {
+            chronologicalEmotions = window.currentScoresData.detailed_metrics.sentiment_analysis.chronological_emotions;
+            console.log(`Found ${chronologicalEmotions.length} emotion segments for display`);
+        } else {
+            console.log('No chronological emotions data available');
+            // Try to reload scores data if not available
+            try {
+                const response = await window.pywebview.api.get_scores(window.currentGuid);
+                if (response.success && response.data && response.data.detailed_metrics && 
+                    response.data.detailed_metrics.sentiment_analysis && 
+                    response.data.detailed_metrics.sentiment_analysis.chronological_emotions) {
+                    chronologicalEmotions = response.data.detailed_metrics.sentiment_analysis.chronological_emotions;
+                    window.currentScoresData = response.data; // Update global data
+                    console.log(`Loaded ${chronologicalEmotions.length} emotion segments from backend`);
+                }
+            } catch (error) {
+                console.log('Could not load emotion data:', error);
+            }
+        }
+        
+        // Check for the new chronological emotions format first
+        if (detailedMetrics && detailedMetrics.sentiment_analysis) {
+            const sentimentAnalysis = detailedMetrics.sentiment_analysis;
+            
+            // Check if we have chronological emotions data
+            if (sentimentAnalysis.chronological_emotions && sentimentAnalysis.chronological_emotions.length > 0) {
+                const chronologicalEmotions = sentimentAnalysis.chronological_emotions;
+                const speakerSummaries = sentimentAnalysis.speaker_summaries || {};
+                
+                let sentimentHtml = '<div class="sentiment-analysis-container">';
+                
+                // Display chronological emotions summary
+                sentimentHtml += '<h5>Chronological Emotion Analysis</h5>';
+                sentimentHtml += `<p class="text-muted">Analyzed ${chronologicalEmotions.length} segments with emotion data. Emotions are displayed inline with the transcript above.</p>`;
+                
+                // Display emotion distribution
+                const emotionCounts = {};
+                chronologicalEmotions.forEach(segment => {
+                    const emotion = segment.dominant_emotion;
+                    emotionCounts[emotion] = (emotionCounts[emotion] || 0) + 1;
+                });
+                
+                sentimentHtml += '<div class="emotion-distribution mb-3">';
+                sentimentHtml += '<h6>Overall Emotion Distribution:</h6>';
+                Object.entries(emotionCounts).forEach(([emotion, count]) => {
+                    const percentage = ((count / chronologicalEmotions.length) * 100).toFixed(1);
+                    const emotionColor = getEmotionColor(emotion);
+                    sentimentHtml += `
+                        <span class="emotion-badge" style="background-color: ${emotionColor}; color: white; padding: 3px 8px; border-radius: 12px; margin: 2px; display: inline-block; font-size: 0.9em;">
+                            ${emotion.charAt(0).toUpperCase() + emotion.slice(1)}: ${count} (${percentage}%)
+                        </span>
+                    `;
+                });
+                sentimentHtml += '</div>';
+                
+                // Display speaker summaries if available
+                if (Object.keys(speakerSummaries).length > 0) {
+                    sentimentHtml += '<h5>Speaker Emotion Summaries</h5>';
+                    Object.entries(speakerSummaries).forEach(([speaker, emotions]) => {
+                        sentimentHtml += `<div class="speaker-sentiment-details mb-3">
+                                             <h6>${speaker.replace(/_/g, ' ')}</h6><ul>`;
                         if (emotions && typeof emotions === 'object') {
                             const emotionOrder = ['joy', 'sadness', 'love', 'anger', 'fear', 'surprise'];
                             emotionOrder.forEach(emotionKey => {
                                  const score = emotions[emotionKey];
-                                 speakerHtml += `<li>${emotionKey.charAt(0).toUpperCase() + emotionKey.slice(1)}: ${score !== undefined && score !== null ? parseFloat(score).toFixed(3) : 'N/A'}</li>`;
+                                 sentimentHtml += `<li>${emotionKey.charAt(0).toUpperCase() + emotionKey.slice(1)}: ${score !== undefined && score !== null ? parseFloat(score).toFixed(3) : 'N/A'}</li>`;
                             });
 
-                            speakerHtml += `<li class="mt-2"><strong>Dominant Emotion: ${emotions.dominant_emotion || 'N/A'}</strong></li>`;
+                            sentimentHtml += `<li class="mt-2"><strong>Dominant Emotion: ${emotions.dominant_emotion || 'N/A'}</strong></li>`;
                             if (emotions.segments_analyzed !== undefined) {
-                                speakerHtml += `<li>Segments Analyzed: ${emotions.segments_analyzed}</li>`;
+                                sentimentHtml += `<li>Segments Analyzed: ${emotions.segments_analyzed}</li>`;
                             }
                         } else {
-                            speakerHtml += '<li>No specific emotion data found for this speaker.</li>';
+                            sentimentHtml += '<li>No specific emotion data found for this speaker.</li>';
                         }
-                        speakerHtml += `</ul></div>`;
-                        return speakerHtml;
-                    }).join('');
+                        sentimentHtml += `</ul></div>`;
+                    });
+                }
+                
+                sentimentHtml += '</div>';
+                sentimentContainer.innerHTML = sentimentHtml;
+                
             } else {
-                console.log("Sentiment data (sentiment_analysis.score) is empty or not an object. Displaying default message.");
-                sentimentContainer.innerHTML = '<p>No sentiment data processed for this video. Click "Load/Process Full Analytics" to generate it.</p>';
+                // Fallback to old format for backward compatibility
+                const sentimentData = sentimentAnalysis.score;
+                console.log("Sentiment data to display (sentiment_analysis.score):", sentimentData ? JSON.parse(JSON.stringify(sentimentData)) : "undefined/null");
+
+                if (typeof sentimentData === 'object' && sentimentData !== null && Object.keys(sentimentData).length > 0) {
+                    sentimentContainer.innerHTML = Object.entries(sentimentData)
+                        .map(([speaker, emotions]) => {
+                            let speakerHtml = `<div class="speaker-sentiment-details mb-3">
+                                                 <h5>${speaker.replace(/_/g, ' ')}</h5><ul>`;
+                            if (emotions && typeof emotions === 'object') {
+                                const emotionOrder = ['joy', 'sadness', 'love', 'anger', 'fear', 'surprise'];
+                                emotionOrder.forEach(emotionKey => {
+                                     const score = emotions[emotionKey];
+                                     speakerHtml += `<li>${emotionKey.charAt(0).toUpperCase() + emotionKey.slice(1)}: ${score !== undefined && score !== null ? parseFloat(score).toFixed(3) : 'N/A'}</li>`;
+                                });
+
+                                speakerHtml += `<li class="mt-2"><strong>Dominant Emotion: ${emotions.dominant_emotion || 'N/A'}</strong></li>`;
+                                if (emotions.segments_analyzed !== undefined) {
+                                    speakerHtml += `<li>Segments Analyzed: ${emotions.segments_analyzed}</li>`;
+                                }
+                            } else {
+                                speakerHtml += '<li>No specific emotion data found for this speaker.</li>';
+                            }
+                            speakerHtml += `</ul></div>`;
+                            return speakerHtml;
+                        }).join('');
+                } else {
+                    console.log("Sentiment data (sentiment_analysis.score) is empty or not an object. Displaying default message.");
+                    sentimentContainer.innerHTML = '<p>No sentiment data processed for this video. Click "Load/Process Full Analytics" to generate it.</p>';
+                }
             }
         } else {
-            console.log("Path to sentiment data (detailedMetrics.sentiment_analysis.score) is invalid. Full detailedMetrics.sentiment_analysis:", detailedMetrics ? detailedMetrics.sentiment_analysis : "undefined/null");
+            console.log("Path to sentiment data (detailedMetrics.sentiment_analysis) is invalid. Full detailedMetrics.sentiment_analysis:", detailedMetrics ? detailedMetrics.sentiment_analysis : "undefined/null");
             sentimentContainer.innerHTML = '<p>Sentiment data not found or structure is incorrect. Click "Load/Process Full Analytics" to generate it.</p>';
         }
     }
@@ -1278,17 +1348,39 @@ function updateMainScoresUI(scoresData) {
 
 // Initialize diarization functionality
 async function initializeDiarization() {
+    console.log('initializeDiarization called');
+    
     const transcriptContent = document.getElementById('transcriptContent');
     const saveChangesBtn = document.getElementById('saveChangesBtn');
     const speakerBtns = document.querySelectorAll('.speaker-btn');
+    const swapLabelsBtn = document.getElementById('swapLabelsBtn');
+    
+    console.log('Found DOM elements:', {
+        transcriptContent: !!transcriptContent,
+        saveChangesBtn: !!saveChangesBtn,
+        speakerBtns: speakerBtns.length,
+        swapLabelsBtn: !!swapLabelsBtn
+    });
+    
     let selectedSegments = [];
     let isEditing = false;
+    
+    // Check if already initialized to prevent duplicate listeners
+    if (saveChangesBtn && saveChangesBtn.hasAttribute('data-diarization-initialized')) {
+        console.log('Diarization already initialized');
+        return;
+    }
+    
+    if (!saveChangesBtn) {
+        console.error('Save changes button not found!');
+        return;
+    }
     
     try {
         // Load diarized transcript
         const response = await window.pywebview.api.get_diarized_transcript(window.currentGuid);
         if (response.success) {
-            displayDiarizedTranscript(response.data.segments);
+            await displayDiarizedTranscript(response.segments);
         } else {
             console.error('Error loading diarized transcript:', response.error);
             transcriptContent.innerHTML = `
@@ -1343,32 +1435,44 @@ async function initializeDiarization() {
         });
     });
     
+    // Handle swap labels button
+    if (swapLabelsBtn) {
+        swapLabelsBtn.addEventListener('click', () => {
+            swapSpeakerLabels();
+        });
+    }
+    
     // Handle keyboard shortcuts
     document.addEventListener('keydown', (e) => {
         if (!isEditing) return;
-        if (e.key === '1' || e.key === '2') {
-            const speaker = e.key;
-            assignSpeakerToSelected(speaker);
+        if (e.key === 'p' || e.key === 'P') {
+            assignSpeakerToSelected('SPEAKER_00');  // Speaker 1 (default: Parent)
+        } else if (e.key === 'c' || e.key === 'C') {
+            assignSpeakerToSelected('SPEAKER_01');  // Speaker 2 (default: Child)
         }
     });
     
     // Handle save button click
     saveChangesBtn.addEventListener('click', async () => {
+        console.log('Edit button clicked, isEditing:', isEditing);
+        
         if (isEditing) {
             // Save changes
             try {
                 const segments = Array.from(document.querySelectorAll('.transcript-segment')).map(segment => ({
                     start: parseFloat(segment.dataset.start),
                     end: parseFloat(segment.dataset.end),
-                    speaker: parseInt(segment.classList.contains('speaker-1') ? '1' : '2'),
+                    speaker: segment.dataset.speakerId || 'SPEAKER_00',  // Use normalized ID from data attribute
                     text: segment.querySelector('.text').textContent
                 }));
                 
+                console.log('Saving segments:', segments.length);
                 const response = await window.pywebview.api.save_diarization(window.currentGuid, segments);
                 if (response.success) {
                     showMessage('Changes saved successfully', 'success');
                     isEditing = false;
                     saveChangesBtn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
+                    transcriptContent.classList.remove('editing-mode');
                     document.querySelectorAll('.transcript-segment').forEach(segment => {
                         segment.classList.remove('selected');
                     });
@@ -1383,10 +1487,17 @@ async function initializeDiarization() {
             }
         } else {
             // Enable editing
+            console.log('Enabling edit mode');
             isEditing = true;
             saveChangesBtn.innerHTML = '<i class="bi bi-save"></i> Save Changes';
+            transcriptContent.classList.add('editing-mode');
+            showMessage('Editing mode enabled. Click segments to select, then use speaker buttons to assign. Keyboard shortcuts: P=Speaker 1, C=Speaker 2. Use the swap button to change speaker labels.', 'info');
         }
     });
+    
+    // Mark as initialized to prevent duplicate event listeners
+    saveChangesBtn.setAttribute('data-diarization-initialized', 'true');
+    console.log('Diarization functionality initialized for edit button');
     
     function updateSelectedSegments() {
         selectedSegments = Array.from(document.querySelectorAll('.transcript-segment.selected'));
@@ -1397,20 +1508,85 @@ async function initializeDiarization() {
         saveChangesBtn.disabled = !isEditing;
     }
     
-    function assignSpeakerToSelected(speaker) {
+    function getSpeakerFromClasses(segment) {
+        // Get the actual speaker ID from data attribute, not classes
+        return segment.dataset.speakerId || 'SPEAKER_00';
+    }
+    
+    function assignSpeakerToSelected(targetSpeakerId) {
         if (selectedSegments.length === 0) return;
         
-        // Update UI
+        // Normalize target speaker ID
+        let normalizedSpeakerId = targetSpeakerId;
+        if (targetSpeakerId === 'PARENT') {
+            normalizedSpeakerId = 'SPEAKER_00';
+        } else if (targetSpeakerId === 'CHILD') {
+            normalizedSpeakerId = 'SPEAKER_01';
+        }
+        
+        // Update segments
         selectedSegments.forEach(segment => {
-            segment.classList.remove('speaker-1', 'speaker-2');
-            segment.classList.add(`speaker-${speaker}`);
-            segment.querySelector('.speaker-label').textContent = `Speaker ${speaker}`;
+            // Update data attribute with normalized ID
+            segment.dataset.speakerId = normalizedSpeakerId;
+            
+            // Update visual classes
+            segment.className = segment.className.replace(/speaker-SPEAKER_\d+/g, '');
+            segment.classList.add(`speaker-${normalizedSpeakerId}`);
+            
+            // Update speaker label display using current mapping
+            const speakerLabel = segment.querySelector('.speaker-label');
+            if (speakerLabel && window.currentSpeakerMapping) {
+                const displayName = window.currentSpeakerMapping[normalizedSpeakerId] || normalizedSpeakerId;
+                // Preserve emotion indicator if present
+                const emotionIndicator = speakerLabel.querySelector('.emotion-indicator');
+                const emotionHtml = emotionIndicator ? emotionIndicator.outerHTML : '';
+                speakerLabel.innerHTML = displayName + emotionHtml;
+            }
         });
         
         // Clear selection
         selectedSegments.forEach(segment => segment.classList.remove('selected'));
         selectedSegments = [];
         updateSaveButton();
+    }
+    
+    async function swapSpeakerLabels() {
+        console.log('Swapping speaker labels and assignments...');
+        
+        try {
+            // Get all current segments
+            const segments = Array.from(document.querySelectorAll('.transcript-segment')).map(segment => ({
+                start: parseFloat(segment.dataset.start),
+                end: parseFloat(segment.dataset.end),
+                speaker: segment.dataset.speakerId,
+                text: segment.querySelector('.text').textContent
+            }));
+            
+            if (segments.length === 0) {
+                showMessage('No segments to swap', 'info');
+                return;
+            }
+            
+            // Swap speaker assignments in all segments
+            const swappedSegments = segments.map(segment => ({
+                ...segment,
+                speaker: segment.speaker === 'SPEAKER_00' ? 'SPEAKER_01' : 'SPEAKER_00'
+            }));
+            
+            // Save the swapped segments
+            const response = await window.pywebview.api.save_diarization(window.currentGuid, swappedSegments);
+            if (response.success) {
+                // Refresh the display with swapped segments
+                await displayDiarizedTranscript(swappedSegments);
+                showMessage('Speaker assignments swapped successfully', 'success');
+                console.log('Successfully swapped speaker assignments for all segments');
+            } else {
+                showMessage(`Error swapping speakers: ${response.error}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error swapping speaker labels:', error);
+            showMessage('Error swapping speaker assignments', 'error');
+        }
     }
 }
 
@@ -1479,4 +1655,239 @@ function debounce(func, wait) {
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
     };
-} 
+}
+
+// Global helper functions for transcript display (moved outside DOMContentLoaded scope)
+async function displayDiarizedTranscript(segments, speakerMapping = null) {
+    const transcriptContent = document.getElementById('transcriptContent');
+    if (!segments || !segments.length) {
+        transcriptContent.innerHTML = `
+            <div class="alert alert-info">
+                No diarized segments available.
+            </div>
+        `;
+        return;
+    }
+    
+    // Store speaker mapping globally for other functions to use
+    window.currentSpeakerMapping = speakerMapping || {
+        "SPEAKER_00": "Parent",
+        "SPEAKER_01": "Child"
+    };
+    
+    // Get chronological emotions data if available
+    let chronologicalEmotions = [];
+    if (window.currentScoresData && 
+        window.currentScoresData.detailed_metrics && 
+        window.currentScoresData.detailed_metrics.sentiment_analysis && 
+        window.currentScoresData.detailed_metrics.sentiment_analysis.chronological_emotions) {
+        chronologicalEmotions = window.currentScoresData.detailed_metrics.sentiment_analysis.chronological_emotions;
+        console.log(`Found ${chronologicalEmotions.length} emotion segments for display`);
+    } else {
+        console.log('No chronological emotions data available');
+        // Try to reload scores data if not available
+        try {
+            const response = await window.pywebview.api.get_scores(window.currentGuid);
+            if (response.success && response.data && response.data.detailed_metrics && 
+                response.data.detailed_metrics.sentiment_analysis && 
+                response.data.detailed_metrics.sentiment_analysis.chronological_emotions) {
+                chronologicalEmotions = response.data.detailed_metrics.sentiment_analysis.chronological_emotions;
+                window.currentScoresData = response.data; // Update global data
+                console.log(`Loaded ${chronologicalEmotions.length} emotion segments from backend`);
+            }
+        } catch (error) {
+            console.log('Could not load emotion data:', error);
+        }
+    }
+    
+    // Convert internal speaker IDs to display names using speaker mapping
+    function getSpeakerDisplayName(speakerId) {
+        // Normalize speaker ID first
+        let normalizedId = speakerId;
+        if (speakerId === 'PARENT' || speakerId === 'Parent') {
+            normalizedId = 'SPEAKER_00';
+        } else if (speakerId === 'CHILD' || speakerId === 'Child') {
+            normalizedId = 'SPEAKER_01';
+        }
+        
+        // Return mapped display name or fallback
+        return window.currentSpeakerMapping[normalizedId] || speakerId;
+    }
+    
+    function getSpeakerClass(speakerId) {
+        // Normalize speaker ID first
+        let normalizedId = speakerId;
+        if (speakerId === 'PARENT' || speakerId === 'Parent') {
+            normalizedId = 'SPEAKER_00';
+        } else if (speakerId === 'CHILD' || speakerId === 'Child') {
+            normalizedId = 'SPEAKER_01';
+        }
+        
+        // Return class based on normalized ID
+        return `speaker-${normalizedId}`;
+    }
+    
+    transcriptContent.innerHTML = segments.map(segment => {
+        // Find matching emotion data for this segment - only match by time, not speaker
+        const emotionData = chronologicalEmotions.find(emotion => 
+            Math.abs(emotion.start_time - segment.start) < 1.0 // Increased tolerance to 1 second, removed speaker matching
+        );
+        
+        let emotionDisplay = '';
+        if (emotionData) {
+            const dominantEmotion = emotionData.dominant_emotion;
+            const emotionScore = emotionData.emotions[dominantEmotion];
+            const emotionColor = getEmotionColor(dominantEmotion);
+            
+            emotionDisplay = `
+                <div class="emotion-indicator" style="background-color: ${emotionColor}; color: white; padding: 4px 8px; border-radius: 15px; font-size: 0.85em; display: inline-block; margin-left: 10px; font-weight: bold;">
+                    ${dominantEmotion.charAt(0).toUpperCase() + dominantEmotion.slice(1)} (${(emotionScore * 100).toFixed(0)}%)
+                </div>
+            `;
+        }
+        
+        const speakerDisplayName = getSpeakerDisplayName(segment.speaker);
+        const speakerClass = getSpeakerClass(segment.speaker);
+        
+        return `
+            <div class="transcript-segment ${speakerClass}" 
+                 data-start="${segment.start}" 
+                 data-end="${segment.end}"
+                 data-speaker-id="${segment.speaker}">
+                <div class="speaker-label">
+                    ${speakerDisplayName}
+                    ${emotionDisplay}
+                </div>
+                <div class="timestamp">${formatTime(segment.start)} - ${formatTime(segment.end)}</div>
+                <div class="text">${segment.text}</div>
+            </div>
+        `;
+    }).join('');
+
+    // Add click handlers to segments - only seek, don't play
+    document.querySelectorAll('.transcript-segment').forEach(segment => {
+        segment.addEventListener('click', function() {
+            const startTime = parseFloat(this.dataset.start);
+            const videoPlayer = document.getElementById('videoPlayer');
+            if (videoPlayer) {
+                videoPlayer.currentTime = startTime;
+            }
+        });
+    });
+}
+
+function getEmotionColor(emotion) {
+    const emotionColors = {
+        'joy': '#28a745',      // green
+        'sadness': '#007bff',  // blue  
+        'anger': '#dc3545',    // red
+        'fear': '#6f42c1',     // purple
+        'surprise': '#fd7e14', // orange
+        'love': '#e83e8c'      // pink
+    };
+    return emotionColors[emotion] || '#6c757d'; // default gray
+}
+
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
+// Make functions globally accessible
+window.displayDiarizedTranscript = displayDiarizedTranscript;
+window.getEmotionColor = getEmotionColor;
+window.formatTime = formatTime;
+
+function addStyleToDocument() {
+    const style = document.createElement('style');
+    style.textContent = `
+        .chart-container {
+            cursor: pointer;
+        }
+        .chart-container:hover {
+            background-color: rgba(0,0,0,0.02);
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// Call this when the document loads
+document.addEventListener('DOMContentLoaded', function() {
+    addStyleToDocument();
+    // ... rest of your initialization code ...
+});
+
+// Remove the event listener that automatically processes the file on selection
+// Let the form submission handle the file upload instead
+document.getElementById('hrDataFile').removeEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const csvData = e.target.result;
+        const parsedData = parseHeartRateData(csvData); // Parse the CSV data
+        console.log(parsedData);
+        if (parsedData) { // Check if parsed data is valid
+            uploadHRData(parsedData, window.currentGuid);
+        } else {
+            showMessage('Error parsing heart rate data. Please ensure the file is in the correct format.', 'error');
+        }
+    };
+    reader.readAsText(file);
+});
+
+function parseHeartRateData(csvText) {
+    try {
+        const rows = csvText.split('\n');
+        const data = rows
+            .map(row => {
+                const values = row.split(',').map(s => s.trim());
+                if (values.length < 3) return null;
+
+                const timeStr = values[0];
+                const parentBpm = parseFloat(values[1]);
+                const childBpm = parseFloat(values[2]);
+                
+                // Parse time (expecting format like "MM:SS" or "HH:MM:SS")
+                const timeComponents = timeStr.split(':').map(Number);
+                let seconds = 0;
+                if (timeComponents.length === 2) {
+                    seconds = timeComponents[0] * 60 + timeComponents[1];
+                } else if (timeComponents.length === 3) {
+                    seconds = timeComponents[0] * 3600 + timeComponents[1] * 60 + timeComponents[2];
+                }
+
+                if (isNaN(seconds) || isNaN(parentBpm) || isNaN(childBpm)) return null;
+
+                return {
+                    timestamp: seconds,
+                    parent: parentBpm,
+                    child: childBpm
+                };
+            })
+            .filter(item => item !== null);
+
+        return data;
+    } catch (error) {
+        console.error('Error parsing heart rate data:', error);
+        alert('Error parsing file. Please ensure it\'s in the correct format (Time,Parent BPM,Child BPM)');
+        return null;
+    }
+}
+
+function updateHeartRateTable(data) {
+    const tableBody = document.getElementById('heartRateTableBody');
+    if (!tableBody) return;
+    
+    tableBody.innerHTML = data
+        .map((row, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${row.child || 'N/A'}</td>
+                <td>${row.parent || 'N/A'}</td>
+            </tr>
+        `)
+        .join('');
+}
