@@ -605,8 +605,11 @@ class API:
                     if 'description' in new_data_for_metric:
                         existing_scores['scores'][metric_key]['description'] = new_data_for_metric['description']
 
-            # Update detailed metrics (similar logic)
+            # Update detailed metrics (different logic for overwritable vs non-overwritable metrics)
             if 'detailed_metrics' in scores_from_payload and isinstance(scores_from_payload['detailed_metrics'], dict):
+                # Metrics that can be manually overwritten (keep original/current structure)
+                overwritable_metrics = {'turn_balance'}
+                
                 for metric_key, new_data_for_metric in scores_from_payload['detailed_metrics'].items():
                     logging.debug(f"Processing detailed metric '{metric_key}'. New data (first 200 chars): {str(new_data_for_metric)[:200]}")
                     if not isinstance(new_data_for_metric, dict):
@@ -616,17 +619,25 @@ class API:
                     if metric_key not in existing_scores['detailed_metrics']:
                         existing_scores['detailed_metrics'][metric_key] = {}
 
-                    if 'original' in existing_scores['detailed_metrics'][metric_key]:
-                        logging.debug(f"Detailed metric '{metric_key}': Kept existing 'original' value.")
-                    elif 'original' in new_data_for_metric:
-                        existing_scores['detailed_metrics'][metric_key]['original'] = new_data_for_metric['original']
-                        logging.debug(f"Detailed metric '{metric_key}': Set 'original' from new data.")
-                    else:
-                        fallback_original = new_data_for_metric.get('current', {})
-                        existing_scores['detailed_metrics'][metric_key]['original'] = fallback_original
-                        logging.warning(f"Detailed metric '{metric_key}': Missing 'original' in new data. Set 'original' to current value.")
+                    if metric_key in overwritable_metrics:
+                        # Handle overwritable metrics with original/current structure
+                        if 'original' in existing_scores['detailed_metrics'][metric_key]:
+                            logging.debug(f"Detailed metric '{metric_key}': Kept existing 'original' value.")
+                        elif 'original' in new_data_for_metric:
+                            existing_scores['detailed_metrics'][metric_key]['original'] = new_data_for_metric['original']
+                            logging.debug(f"Detailed metric '{metric_key}': Set 'original' from new data.")
+                        else:
+                            fallback_original = new_data_for_metric.get('current', {})
+                            existing_scores['detailed_metrics'][metric_key]['original'] = fallback_original
+                            logging.warning(f"Detailed metric '{metric_key}': Missing 'original' in new data. Set 'original' to current value.")
 
-                    existing_scores['detailed_metrics'][metric_key]['current'] = new_data_for_metric.get('current', existing_scores['detailed_metrics'][metric_key].get('original', {}))
+                        existing_scores['detailed_metrics'][metric_key]['current'] = new_data_for_metric.get('current', existing_scores['detailed_metrics'][metric_key].get('original', {}))
+                    else:
+                        # Handle non-overwritable metrics with simple score structure
+                        if 'score' in new_data_for_metric:
+                            existing_scores['detailed_metrics'][metric_key]['score'] = new_data_for_metric['score']
+                    
+                    # Update label and description for all metrics
                     if 'label' in new_data_for_metric:
                         existing_scores['detailed_metrics'][metric_key]['label'] = new_data_for_metric['label']
                     if 'description' in new_data_for_metric:
@@ -817,17 +828,50 @@ class API:
     def save_notes(self, guid, notes):
         """Save notes for a video"""
         try:
+            logging.debug(f"save_notes called with guid={guid}")
+            logging.debug(f"notes type={type(notes)}")
+            logging.debug(f"notes length={len(str(notes))}")
+            logging.debug(f"notes content (first 200 chars)={str(notes)[:200]}")
+            
+            # Handle both string and dict inputs (pywebview sometimes converts data)
+            if isinstance(notes, dict):
+                logging.warning(f"Received dict for notes: {notes}")
+                # If it's a dict, try to extract the actual notes content
+                if 'notes' in notes:
+                    notes_content = notes['notes']
+                elif 'value' in notes:
+                    notes_content = notes['value']
+                elif 'text' in notes:
+                    notes_content = notes['text']
+                else:
+                    # If it's a dict but we can't find notes content, convert to string
+                    notes_content = str(notes)
+                    logging.warning(f"Received dict for notes, converted to string: {notes}")
+            else:
+                notes_content = str(notes)  # Ensure it's a string
+            
+            logging.debug(f"Final notes_content length={len(notes_content)}")
+            logging.debug(f"Final notes_content (first 200 chars)={notes_content[:200]}")
+                
             notes_dir = os.path.join(UPLOAD_FOLDER, 'notes')
             os.makedirs(notes_dir, exist_ok=True)
             
             notes_file = os.path.join(notes_dir, f"{guid}_notes.txt")
-            with open(notes_file, 'w') as f:
-                f.write(notes)
             
-            logging.info(f"Saved notes for {guid}")
+            # Write with explicit encoding
+            with open(notes_file, 'w', encoding='utf-8') as f:
+                f.write(notes_content)
+            
+            # Verify what was actually written
+            with open(notes_file, 'r', encoding='utf-8') as f:
+                saved_content = f.read()
+                logging.debug(f"Verified saved content length={len(saved_content)}")
+                logging.debug(f"Verified saved content matches input: {saved_content == notes_content}")
+            
+            logging.info(f"Saved notes for {guid} - {len(notes_content)} characters")
             return {"success": True}
         except Exception as e:
-            logging.error(f"Error saving notes: {str(e)}")
+            logging.error(f"Error saving notes: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     def get_notes(self, guid):
@@ -841,6 +885,37 @@ class API:
             return {"success": True, "data": ""}
         except Exception as e:
             logging.error(f"Error getting notes: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def debug_test_notes(self, guid):
+        """Debug function to test notes saving with various content lengths"""
+        try:
+            test_results = []
+            
+            # Test 1: Short string
+            short_test = "Short test note"
+            result1 = self.save_notes(guid, short_test)
+            test_results.append(f"Short test (14 chars): {result1}")
+            
+            # Test 2: Medium string
+            medium_test = "This is a medium length test note that contains multiple sentences. " * 3
+            result2 = self.save_notes(guid, medium_test)
+            test_results.append(f"Medium test ({len(medium_test)} chars): {result2}")
+            
+            # Test 3: Long string
+            long_test = "This is a very long test note. " * 20
+            result3 = self.save_notes(guid, long_test)
+            test_results.append(f"Long test ({len(long_test)} chars): {result3}")
+            
+            # Test 4: String with special characters
+            special_test = "Test with special chars: àáâãäåæçèéêë 🎵 ñöü 中文 العربية"
+            result4 = self.save_notes(guid, special_test)
+            test_results.append(f"Special chars test ({len(special_test)} chars): {result4}")
+            
+            return {"success": True, "results": test_results}
+            
+        except Exception as e:
+            logging.error(f"Error in debug_test_notes: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
 
 def main():

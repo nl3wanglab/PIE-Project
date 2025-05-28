@@ -354,406 +354,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Additional code to load the video can go here
 });
 
-function initializeCharts() {
-    // Add this common configuration object for click interactions
-    const clickInteractionConfig = {
-        onClick: (event, elements) => {
-            if (elements && elements.length > 0) {
-                const index = elements[0].index;
-                const timestamps = event.chart.data.labels;
-                const timeString = timestamps[index];
-                const seconds = timeStringToSeconds(timeString);
-                
-                // Set video to that timestamp
-                const videoPlayer = document.getElementById('videoPlayer');
-                videoPlayer.currentTime = seconds;
-                videoPlayer.play();
-                
-                // Highlight corresponding transcript segment
-                highlightTranscriptSegment(seconds);
-            }
-        }
-    };
-
-    // Initialize speaking time chart
-    const speakingTimeCtx = document.getElementById('speakingTimeChart').getContext('2d');
-    window.speakingTimeChart = new Chart(speakingTimeCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Speaking Time (seconds)',
-                data: [],
-                borderColor: 'rgb(75, 192, 192)',
-                tension: 0.1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Speaking Time Distribution'
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Duration (seconds)'
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Timeline'
-                    }
-                }
-            },
-            ...clickInteractionConfig,
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            },
-            onHover: (event, elements) => {
-                event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-            }
-        }
-    });
-
-    // Initialize word frequency chart
-    const wordFrequencyCtx = document.getElementById('wordFrequencyChart').getContext('2d');
-    window.wordFrequencyChart = new Chart(wordFrequencyCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Word Frequency',
-                data: [],
-                borderColor: 'rgb(153, 102, 255)',
-                tension: 0.1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Word Frequency Over Time'
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Word Count'
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Timeline'
-                    }
-                }
-            },
-            ...clickInteractionConfig,
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            },
-            onHover: (event, elements) => {
-                event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-            }
-        }
-    });
-
-    // Initialize heart rate chart
-    const heartRateCtx = document.getElementById('heartRateChart').getContext('2d');
-    window.heartRateChart = new Chart(heartRateCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Heart Rate (BPM)',
-                data: [],
-                borderColor: 'rgb(255, 99, 132)',
-                tension: 0.1,
-                fill: false
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Heart Rate Over Time'
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: false,
-                    title: {
-                        display: true,
-                        text: 'BPM'
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Timeline'
-                    }
-                }
-            },
-            ...clickInteractionConfig,
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            },
-            onHover: (event, elements) => {
-                event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-            }
-        }
-    });
-
-    // Initialize emotions chart
-    const emotionsCtx = document.getElementById('emotionsChart').getContext('2d');
-    window.emotionsChart = new Chart(emotionsCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [
-                {
-                    label: 'Happy',
-                    data: [],
-                    borderColor: 'rgb(255, 206, 86)',
-                    tension: 0.1,
-                    fill: false
-                },
-                {
-                    label: 'Sad',
-                    data: [],
-                    borderColor: 'rgb(54, 162, 235)',
-                    tension: 0.1,
-                    fill: false
-                },
-                {
-                    label: 'Angry',
-                    data: [],
-                    borderColor: 'rgb(255, 99, 132)',
-                    tension: 0.1,
-                    fill: false
-                },
-                {
-                    label: 'Neutral',
-                    data: [],
-                    borderColor: 'rgb(75, 192, 192)',
-                    tension: 0.1,
-                    fill: false
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Emotion Detection Over Time'
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 1,
-                    title: {
-                        display: true,
-                        text: 'Confidence Score'
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Timeline'
-                    }
-                }
-            },
-            ...clickInteractionConfig,
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            },
-            onHover: (event, elements) => {
-                event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-            }
-        }
-    });
-
-    // Initialize emotions pie chart
-    const emotionsPieCtx = document.getElementById('emotionsPieChart').getContext('2d');
-    window.emotionsPieChart = new Chart(emotionsPieCtx, {
-        type: 'pie',
-        data: {
-            labels: ['Happy', 'Sad', 'Angry', 'Neutral'],
-            datasets: [{
-                data: [0, 0, 0, 0],
-                backgroundColor: [
-                    'rgb(255, 206, 86)',   // Happy - yellow
-                    'rgb(54, 162, 235)',    // Sad - blue
-                    'rgb(255, 99, 132)',    // Angry - red
-                    'rgb(75, 192, 192)'     // Neutral - green
-                ],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Overall Emotion Distribution'
-                },
-                legend: {
-                    position: 'right'
-                }
-            }
-        }
-    });
-}
-
-function updateCharts(transcriptData) {
-    if (!transcriptData || !transcriptData.segments) return;
-
-    // Store the original timestamps for click handling
-    window.timestampData = transcriptData.segments.map(segment => ({
-        start: segment.timestamp[0],
-        end: segment.timestamp[1]
-    }));
-
-    // Process data for speaking time chart
-    const timeData = transcriptData.segments.map(segment => {
-        const duration = segment.timestamp[1] - segment.timestamp[0];
-        return {
-            time: formatTimestamp(segment.timestamp[0]),
-            duration: duration
-        };
-    });
-
-    // Process data for word frequency chart
-    const wordData = transcriptData.segments.map(segment => {
-        return {
-            time: formatTimestamp(segment.timestamp[0]),
-            wordCount: segment.text.split(/\s+/).length
-        };
-    });
-
-    // Update speaking time chart
-    window.speakingTimeChart.data.labels = timeData.map(d => d.time);
-    window.speakingTimeChart.data.datasets[0].data = timeData.map(d => d.duration);
-    window.speakingTimeChart.update();
-
-    // Update word frequency chart
-    window.wordFrequencyChart.data.labels = wordData.map(d => d.time);
-    window.wordFrequencyChart.data.datasets[0].data = wordData.map(d => d.wordCount);
-    window.wordFrequencyChart.update();
-
-    // Update heart rate chart (assuming heart rate data is available in transcriptData)
-    if (transcriptData.heartRate) {
-        window.heartRateChart.data.labels = transcriptData.heartRate.map(d => formatTimestamp(d.timestamp));
-        window.heartRateChart.data.datasets[0].data = transcriptData.heartRate.map(d => d.bpm);
-        window.heartRateChart.update();
-    }
-
-    // Update emotions chart (assuming emotion data is available in transcriptData)
-    if (transcriptData.emotions) {
-        const emotions = ['Happy', 'Sad', 'Angry', 'Neutral'];
-        const timestamps = transcriptData.emotions.map(d => formatTimestamp(d.timestamp));
-        
-        window.emotionsChart.data.labels = timestamps;
-        
-        emotions.forEach((emotion, index) => {
-            window.emotionsChart.data.datasets[index].data = 
-                transcriptData.emotions.map(d => d[emotion.toLowerCase()]);
-        });
-        
-        window.emotionsChart.update();
-    }
-
-    // Update emotions pie chart
-    if (transcriptData.emotions) {
-        const emotions = ['Happy', 'Sad', 'Angry', 'Neutral'];
-        
-        // Calculate average emotion values
-        const emotionSums = emotions.reduce((sums, emotion) => {
-            const values = transcriptData.emotions.map(d => d[emotion.toLowerCase()]);
-            sums[emotion] = values.reduce((a, b) => a + b, 0) / values.length;
-            return sums;
-        }, {});
-
-        // Update pie chart
-        window.emotionsPieChart.data.datasets[0].data = emotions.map(emotion => 
-            (emotionSums[emotion] * 100).toFixed(1)
-        );
-        window.emotionsPieChart.update();
-
-        // Add percentages to labels
-        window.emotionsPieChart.data.labels = emotions.map(emotion => 
-            `${emotion} (${(emotionSums[emotion] * 100).toFixed(1)}%)`
-        );
-    }
-}
-
-// Add helper function to calculate emotion percentages
-function calculateEmotionPercentages(emotionsData) {
-    const totalSamples = emotionsData.length;
-    const emotionSums = emotionsData.reduce((sums, sample) => {
-        Object.keys(sample).forEach(emotion => {
-            if (emotion !== 'timestamp') {
-                sums[emotion] = (sums[emotion] || 0) + sample[emotion];
-            }
-        });
-        return sums;
-    }, {});
-
-    // Convert sums to percentages
-    Object.keys(emotionSums).forEach(emotion => {
-        emotionSums[emotion] = (emotionSums[emotion] / totalSamples) * 100;
-    });
-
-    return emotionSums;
-}
-
-// Add these new helper functions
-function timeStringToSeconds(timeString) {
-    const [minutes, seconds] = timeString.split(':').map(Number);
-    return minutes * 60 + seconds;
-}
-
-function highlightTranscriptSegment(targetTime) {
-    const segments = document.querySelectorAll('.transcript-segment');
-    segments.forEach(segment => {
-        const start = parseFloat(segment.dataset.start);
-        const end = parseFloat(segment.dataset.end);
-        
-        if (targetTime >= start && targetTime <= end) {
-            // Remove highlight from all segments
-            segments.forEach(s => s.classList.remove('current-segment'));
-            
-            // Add highlight to current segment
-            segment.classList.add('current-segment');
-            
-            // Scroll segment into view
-            segment.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-    });
-}
-
-// Add this CSS class if not already present
 function addStyleToDocument() {
     const style = document.createElement('style');
     style.textContent = `
@@ -1183,25 +783,6 @@ function updateHRDisplay(data) {
     `).join('');
 }
 
-function updateHRChart(data) {
-    if (window.heartRateChart) {
-        window.heartRateChart.data.datasets = [{
-            label: 'Parent HR',
-            data: data.map(row => row.parent),
-            borderColor: 'rgb(255, 99, 132)',
-            fill: false,
-            tension: 0.1
-        }, {
-            label: 'Child HR',
-            data: data.map(row => row.child),
-            borderColor: 'rgb(75, 192, 192)',
-            fill: false,
-            tension: 0.1
-        }];
-        window.heartRateChart.update();
-    }
-}
-
 function showHRUploadForm() {
     const hrDataStatus = document.getElementById('hrDataStatus');
     const deleteHRDataBtn = document.getElementById('deleteHRData');
@@ -1270,39 +851,6 @@ window.onerror = function(message, source, lineno, colno, error) {
         });
     }
 };
-
-// Add interactivity to the heart rate chart
-const heartRateChartCanvas = document.getElementById('heartRateChart');
-heartRateChartCanvas.onclick = function(event) {
-    if (window.heartRateChart) { // Check if the chart instance exists
-        const activePoints = window.heartRateChart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false);
-        if (activePoints.length) {
-            const index = activePoints[0].index;
-            const timeInSeconds = window.heartRateChart.data.labels[index]; // Use the label for time
-            const videoPlayer = document.getElementById('videoPlayer');
-            videoPlayer.currentTime = timeInSeconds; // Seek to the corresponding time in the video
-            videoPlayer.play(); // Optionally play the video
-        }
-    } else {
-        console.error("Heart rate chart instance is not available.");
-    }
-};
-
-function chartClickHandler(event) {
-    const chart = this.id === 'parentHeartRateChart' ? parentHeartRateChart : childHeartRateChart;
-    if (chart) {
-        const activePoints = chart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false);
-        if (activePoints.length) {
-            const index = activePoints[0].index;
-            const timeInSeconds = chart.data.labels[index]; // Use the timestamp as the time
-            const videoPlayer = document.getElementById('videoPlayer');
-            if (videoPlayer) {
-                videoPlayer.currentTime = timeInSeconds;
-                videoPlayer.play();
-            }
-        }
-    }
-}
 
 // Enhanced transcript scrolling functionality
 document.addEventListener('DOMContentLoaded', function() {
@@ -1598,8 +1146,8 @@ async function initializeScoring() {
 function updateDetailedMetrics(detailedMetrics) {
     console.log("updateDetailedMetrics called with (detailedMetrics):", detailedMetrics ? JSON.parse(JSON.stringify(detailedMetrics)) : "undefined/null");
 
-    // Update Heart Rate metrics
-    const hrMetrics = detailedMetrics?.heart_rate_metrics?.current || {};
+    // Update Heart Rate metrics (uses 'score' structure)
+    const hrMetrics = detailedMetrics?.heart_rate_metrics?.score || {};
     const avgHRElement = document.getElementById('avgHR');
     if (avgHRElement) avgHRElement.textContent = `${hrMetrics.avg_hr?.toFixed(0) || '--'} BPM`;
     const hrVariabilityElement = document.getElementById('hrVariability');
@@ -1607,8 +1155,8 @@ function updateDetailedMetrics(detailedMetrics) {
     const spikeCountElement = document.getElementById('spikeCount');
     if (spikeCountElement) spikeCountElement.textContent = hrMetrics.spike_count || '--';
 
-    // Update Pitch metrics
-    const pitchRanges = detailedMetrics?.pitch_ranges?.current || {};
+    // Update Pitch metrics (uses 'score' structure)
+    const pitchRanges = detailedMetrics?.pitch_ranges?.score || {};
     const pitchDetails = document.getElementById('pitchDetails');
     if (pitchDetails) {
         if (Object.keys(pitchRanges).length > 0) {
@@ -1638,8 +1186,8 @@ function updateDetailedMetrics(detailedMetrics) {
     }
 
 
-    // Update Speech Rate metrics
-    const speechRates = detailedMetrics?.speech_rates?.current || {};
+    // Update Speech Rate metrics (uses 'score' structure)
+    const speechRates = detailedMetrics?.speech_rates?.score || {};
     const speechRateDetails = document.getElementById('speechRateDetails');
     if (speechRateDetails) {
         if (Object.keys(speechRates).length > 0) {
@@ -1655,8 +1203,8 @@ function updateDetailedMetrics(detailedMetrics) {
         }
     }
 
-    // Update Silence metrics
-    const silenceMetrics = detailedMetrics?.silence_metrics?.current || {};
+    // Update Silence metrics (uses 'score' structure)
+    const silenceMetrics = detailedMetrics?.silence_metrics?.score || {};
     const totalSilenceEl = document.getElementById('totalSilence');
     if (totalSilenceEl) totalSilenceEl.textContent = `${silenceMetrics.total_silence?.toFixed(1) || '--'} s`;
     const silenceRatioEl = document.getElementById('silenceRatio');
@@ -1664,15 +1212,15 @@ function updateDetailedMetrics(detailedMetrics) {
     const avgSilenceEl = document.getElementById('avgSilence');
     if (avgSilenceEl) avgSilenceEl.textContent = `${silenceMetrics.avg_silence?.toFixed(1) || '--'} s`;
 
-    // Update Sentiment Analysis metrics
+    // Update Sentiment Analysis metrics (uses 'score' structure)
     const sentimentContainer = document.getElementById('sentimentAnalysisData');
     if (!sentimentContainer) {
         console.error("Sentiment container 'sentimentAnalysisData' not found!");
     } else {
         // More robust check for the presence and structure of sentiment data
-        if (detailedMetrics && detailedMetrics.sentiment_analysis && detailedMetrics.sentiment_analysis.current) {
-            const sentimentData = detailedMetrics.sentiment_analysis.current;
-            console.log("Sentiment data to display (sentiment_analysis.current):", sentimentData ? JSON.parse(JSON.stringify(sentimentData)) : "undefined/null");
+        if (detailedMetrics && detailedMetrics.sentiment_analysis && detailedMetrics.sentiment_analysis.score) {
+            const sentimentData = detailedMetrics.sentiment_analysis.score;
+            console.log("Sentiment data to display (sentiment_analysis.score):", sentimentData ? JSON.parse(JSON.stringify(sentimentData)) : "undefined/null");
 
             if (typeof sentimentData === 'object' && sentimentData !== null && Object.keys(sentimentData).length > 0) {
                 sentimentContainer.innerHTML = Object.entries(sentimentData)
@@ -1697,11 +1245,11 @@ function updateDetailedMetrics(detailedMetrics) {
                         return speakerHtml;
                     }).join('');
             } else {
-                console.log("Sentiment data (sentiment_analysis.current) is empty or not an object. Displaying default message.");
+                console.log("Sentiment data (sentiment_analysis.score) is empty or not an object. Displaying default message.");
                 sentimentContainer.innerHTML = '<p>No sentiment data processed for this video. Click "Load/Process Full Analytics" to generate it.</p>';
             }
         } else {
-            console.log("Path to sentiment data (detailedMetrics.sentiment_analysis.current) is invalid. Full detailedMetrics.sentiment_analysis:", detailedMetrics ? detailedMetrics.sentiment_analysis : "undefined/null");
+            console.log("Path to sentiment data (detailedMetrics.sentiment_analysis.score) is invalid. Full detailedMetrics.sentiment_analysis:", detailedMetrics ? detailedMetrics.sentiment_analysis : "undefined/null");
             sentimentContainer.innerHTML = '<p>Sentiment data not found or structure is incorrect. Click "Load/Process Full Analytics" to generate it.</p>';
         }
     }
@@ -1870,27 +1418,54 @@ async function initializeDiarization() {
 async function initializeNotes() {
     const notesTextarea = document.querySelector('#notes textarea');
     
+    if (!notesTextarea) {
+        console.error('Notes textarea not found');
+        return;
+    }
+    
     try {
         // Load saved notes
+        console.log('Loading saved notes for GUID:', window.currentGuid);
         const response = await window.pywebview.api.get_notes(window.currentGuid);
         if (response.success) {
             notesTextarea.value = response.data;
+            console.log('Loaded notes:', response.data.length, 'characters');
+        } else {
+            console.error('Failed to load notes:', response.error);
         }
     } catch (error) {
         console.error('Error loading notes:', error);
     }
     
-    // Add event listener for notes changes
-    notesTextarea.addEventListener('input', debounce(async function() {
+    // Add event listener for notes changes with shorter debounce
+    notesTextarea.addEventListener('input', debounce(async function(event) {
         try {
+            console.log('Saving notes - length:', this.value.length, 'content preview:', this.value.substring(0, 50));
             const response = await window.pywebview.api.save_notes(window.currentGuid, this.value);
-            if (!response.success) {
+            if (response.success) {
+                console.log('Notes saved successfully - length:', this.value.length);
+            } else {
                 console.error('Error saving notes:', response.error);
             }
         } catch (error) {
             console.error('Error saving notes:', error);
         }
-    }, 1000));
+    }, 500)); // Reduced from 1000ms to 500ms
+    
+    // Also save on blur to ensure content is saved when user clicks away
+    notesTextarea.addEventListener('blur', async function() {
+        try {
+            console.log('Saving notes on blur - length:', this.value.length);
+            const response = await window.pywebview.api.save_notes(window.currentGuid, this.value);
+            if (response.success) {
+                console.log('Notes saved on blur successfully');
+            } else {
+                console.error('Error saving notes on blur:', response.error);
+            }
+        } catch (error) {
+            console.error('Error saving notes on blur:', error);
+        }
+    });
 }
 
 // Debounce function to limit API calls
@@ -1904,25 +1479,4 @@ function debounce(func, wait) {
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
     };
-}
-
-// Remove diarization and summary pages from analysis section
-document.addEventListener('DOMContentLoaded', function() {
-    // Remove diarization and summary tabs
-    const analysisTabs = document.querySelector('.nav-tabs');
-    if (analysisTabs) {
-        const diarizationTab = analysisTabs.querySelector('a[href="#diarization"]');
-        const summaryTab = analysisTabs.querySelector('a[href="#summary"]');
-        if (diarizationTab) diarizationTab.parentElement.remove();
-        if (summaryTab) summaryTab.parentElement.remove();
-    }
-
-    // Remove diarization and summary content
-    const analysisContent = document.querySelector('.tab-content');
-    if (analysisContent) {
-        const diarizationContent = analysisContent.querySelector('#diarization');
-        const summaryContent = analysisContent.querySelector('#summary');
-        if (diarizationContent) diarizationContent.remove();
-        if (summaryContent) summaryContent.remove();
-    }
-}); 
+} 

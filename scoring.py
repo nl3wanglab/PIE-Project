@@ -272,11 +272,11 @@ class ScoringSystem:
             },
             "detailed_metrics": {
                 "turn_balance": {"current": {}, "original": {}, "label": "Turn Balance Details", "description": "Detailed turn balance data."},
-                "heart_rate_metrics": {"current": {}, "original": {}, "label": "Heart Rate Analysis", "description": "Metrics from HR data."},
-                "pitch_ranges": {"current": {}, "original": {}, "label": "Pitch Variation", "description": "Pitch range per speaker."},
-                "speech_rates": {"current": {}, "original": {}, "label": "Speech Rate", "description": "Words per minute per speaker."},
-                "silence_metrics": {"current": {}, "original": {}, "label": "Silence Analysis", "description": "Metrics on silence in conversation."},
-                "sentiment_analysis": {"current": {}, "original": {}, "label": "Sentiment Analysis", "description": "Emotion detection per speaker."}
+                "heart_rate_metrics": {"score": {}, "label": "Heart Rate Analysis", "description": "Metrics from HR data."},
+                "pitch_ranges": {"score": {}, "label": "Pitch Variation", "description": "Pitch range per speaker."},
+                "speech_rates": {"score": {}, "label": "Speech Rate", "description": "Words per minute per speaker."},
+                "silence_metrics": {"score": {}, "label": "Silence Analysis", "description": "Metrics on silence in conversation."},
+                "sentiment_analysis": {"score": {}, "label": "Sentiment Analysis", "description": "Emotion detection per speaker."}
             },
             "timestamp": str(datetime.datetime.now())
         }
@@ -324,34 +324,29 @@ class ScoringSystem:
 
                 # Speech Rates
                 calculated_speech_rates_wpm = self.calculate_speech_rate(segments_for_calc, total_audio_duration)
-                all_scores_payload["detailed_metrics"]["speech_rates"]["current"] = calculated_speech_rates_wpm
-                all_scores_payload["detailed_metrics"]["speech_rates"]["original"] = calculated_speech_rates_wpm
+                all_scores_payload["detailed_metrics"]["speech_rates"]["score"] = calculated_speech_rates_wpm
                 
                 # Silence Metrics
                 silence_metrics_result = self.calculate_silence_metrics(segments_for_calc, total_audio_duration)
-                all_scores_payload["detailed_metrics"]["silence_metrics"]["current"] = silence_metrics_result
-                all_scores_payload["detailed_metrics"]["silence_metrics"]["original"] = silence_metrics_result
+                all_scores_payload["detailed_metrics"]["silence_metrics"]["score"] = silence_metrics_result
 
                 # Pitch Ranges (requires audio loaded)
                 if y_audio is not None and sr_audio is not None:
                     pitch_ranges_result = self.calculate_pitch_range_per_speaker(y_audio, sr_audio, {"segments": segments_for_calc})
-                    all_scores_payload["detailed_metrics"]["pitch_ranges"]["current"] = pitch_ranges_result
-                    all_scores_payload["detailed_metrics"]["pitch_ranges"]["original"] = pitch_ranges_result
+                    all_scores_payload["detailed_metrics"]["pitch_ranges"]["score"] = pitch_ranges_result
                 else:
                     logging.info("CALC_ALL_SCORES_V3: Skipping pitch range calculation as audio was not loaded.")
 
                 # Sentiment Analysis
                 sentiment_results = self.calculate_sentiment_analysis({"segments": segments_for_calc}) # Pass as dict
-                all_scores_payload["detailed_metrics"]["sentiment_analysis"]["current"] = sentiment_results
-                all_scores_payload["detailed_metrics"]["sentiment_analysis"]["original"] = sentiment_results
+                all_scores_payload["detailed_metrics"]["sentiment_analysis"]["score"] = sentiment_results
             else:
                 logging.warning("CALC_ALL_SCORES_V3: No valid segments found in any diarization source. Skipping segment-dependent metrics.")
 
             # HR Metrics (if HR data is provided)
             if hr_data:
                 hr_metrics_result = self.calculate_hr_metrics(hr_data, total_audio_duration)
-                all_scores_payload["detailed_metrics"]["heart_rate_metrics"]["current"] = hr_metrics_result
-                all_scores_payload["detailed_metrics"]["heart_rate_metrics"]["original"] = hr_metrics_result
+                all_scores_payload["detailed_metrics"]["heart_rate_metrics"]["score"] = hr_metrics_result
             else:
                 logging.info("CALC_ALL_SCORES_V3: Skipping HR metrics as no HR data was provided.")
 
@@ -528,7 +523,7 @@ class ScoringSystem:
         # Ensure tb_current is a dict before trying to get 'balance_ratio'
         tb_score = tb_current.get("balance_ratio", 0.5) * 100 if isinstance(tb_current, dict) and tb_current else 50.0
         
-        sr_data = detailed_metrics.get("speech_rates", {}).get("current", {})
+        sr_data = detailed_metrics.get("speech_rates", {}).get("score", {})
         avg_sr_normalized = 0.0
         if isinstance(sr_data, dict) and sr_data:
             valid_rates = [rate for rate in sr_data.values() if isinstance(rate, (int, float))]
@@ -541,7 +536,7 @@ class ScoringSystem:
 
     def _calculate_composite_clarity(self, detailed_metrics: Dict) -> float:
         logging.debug(f"Calculating composite clarity with detailed_metrics: {str(detailed_metrics)[:200]}")
-        silence_metrics_current = detailed_metrics.get("silence_metrics", {}).get("current", {})
+        silence_metrics_current = detailed_metrics.get("silence_metrics", {}).get("score", {})
         # Ensure silence_metrics_current is a dict
         silence_ratio = silence_metrics_current.get("silence_ratio", 0.0) if isinstance(silence_metrics_current, dict) and silence_metrics_current else 0.0
         

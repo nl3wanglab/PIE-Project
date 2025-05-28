@@ -19,43 +19,98 @@ This tool provides comprehensive analysis of parent-child interactions by:
 - GPU recommended for faster processing (MPS compatible)
 
 ### Software Requirements
-- Python 3.11.7 (required - other versions may cause compatibility issues)
-- Internet connection for initial setup
+- Python 3.11.7 (will be automatically downloaded to the project directory)
+- Internet connection for initial setup and Python download
 - Web browser (Chrome, Firefox, or Safari recommended)
 
 ### Mac-Specific Requirements
-- Developer mode enabled in System Settings
-- Xcode Command Line Tools installed (run `xcode-select --install` in Terminal)
-- Accept Xcode license agreement after installation
+- Developer mode enabled in System Settings (for running downloaded applications)
 
-#### Updating Xcode
-1. Open the App Store, search for Xcode, and click Update if available.
-2. Alternatively, download the latest version from [developer.apple.com/download](https://developer.apple.com/download)
-
-#### Installing Xcode Command Line Tools
-Run the following command in Terminal:
-```bash
-xcode-select --install
-```
+#### Note about Security
+When running the setup script, macOS may ask for permission to download files. This is normal and safe.
 
 ## Installation Guide
 
-### Step 1: Prepare Your System
-1. Install Python 3.11.7 from [python.org](https://python.org/downloads/release/python-3117/)
-   - Download and run the macOS installer
-2. Ensure pip (Python package manager) is installed
-3. Download or clone this repository to your computer
+### Quick Setup Option (Recommended)
+If you already have Python 3.8+ installed on your system, you can use the quick setup script:
 
-### Step 2: Set Up Python Environment
-1. Open Terminal
-2. Navigate to the project directory
-3. Create a virtual environment:
+1. **Make the setup script executable:**
    ```bash
-   python -m venv venv
+   chmod +x setup_venv.sh
+   ```
+
+2. **Run the quick setup:**
+   ```bash
+   ./setup_venv.sh
+   ```
+   
+   **What this script does:**
+   - ✅ Checks your Python version
+   - ✅ Creates a virtual environment using your system Python
+   - ✅ Installs all dependencies from requirements.txt
+   - ✅ Provides activation instructions
+
+3. **After setup, always activate before use:**
+   ```bash
    source venv/bin/activate
    ```
 
-### Step 3: Install Dependencies
+### Full Setup Option (If you need Python 3.11.7)
+If you don't have Python or need the specific version, use the comprehensive setup:
+
+### Step 1: Prepare Your System
+1. Download or clone this repository to your computer
+2. Open Terminal
+3. Navigate to the project directory:
+   ```bash
+   cd /path/to/DiarizationScoring
+   ```
+
+### Step 2: Set Up Python Environment with Automatic Version Download
+
+**Important:** This step will download a portable Python 3.11.7 build to the project directory and create a virtual environment that uses only this version.
+
+1. **Make the setup script executable:**
+   ```bash
+   chmod +x setup_python.sh
+   ```
+
+2. **Run the setup script:**
+   ```bash
+   ./setup_python.sh
+   ```
+   
+   **What this script does:**
+   - ✅ Checks if Python 3.11.7 is already set up locally
+   - ✅ Downloads a portable Python 3.11.7 build from python-build-standalone (≈16 MB)
+   - ✅ Extracts Python 3.11.7 to the project directory (`python-3.11.7/`)
+   - ✅ Creates a virtual environment using this Python version
+   - ✅ Provides clear next steps
+
+3. **No administrator privileges required!** 
+   - The script downloads and extracts files only to the project directory
+   - No system-wide installation or modifications
+
+4. **Activate the virtual environment:**
+   ```bash
+   source venv/bin/activate
+   ```
+
+5. **Verify the correct Python version:**
+   ```bash
+   python --version
+   # Should output: Python 3.11.7
+   ```
+
+**Troubleshooting:**
+- If the script fails to download, check your internet connection
+- If extraction fails, ensure you have write permissions in the project directory
+- If you get security warnings, go to System Settings > Privacy & Security and allow the downloaded file
+- The script can be run multiple times safely - it will skip steps that are already complete
+
+### Step 3: Install Dependencies (if using manual setup)
+If you used `setup_python.sh`, dependencies are already installed. Otherwise:
+
 1. With the virtual environment activated, install required packages:
    ```bash
    pip install -r requirements.txt
@@ -85,6 +140,46 @@ xcode-select --install
    ```
 3. A window will open automatically with the application interface
 4. The application runs locally on your computer - no internet connection needed after initial setup
+
+## Virtual Environment Management
+
+### Important Notes
+- **Always activate the virtual environment** before running the application or installing packages
+- The `venv/` folder contains all Python dependencies and should **never be committed to git**
+- If you see import errors, make sure your virtual environment is activated
+
+### Daily Usage
+1. **Open Terminal and navigate to project:**
+   ```bash
+   cd /path/to/DiarizationScoring
+   ```
+
+2. **Activate virtual environment:**
+   ```bash
+   source venv/bin/activate
+   ```
+   
+   You should see `(venv)` at the beginning of your command prompt when activated.
+
+3. **Run the application:**
+   ```bash
+   python main.py
+   ```
+
+4. **Deactivate when done (optional):**
+   ```bash
+   deactivate
+   ```
+
+### Managing Dependencies
+- **Add new packages:** With venv activated: `pip install package_name`
+- **Update requirements:** After adding packages: `pip freeze > requirements.txt`
+- **Reinstall all dependencies:** `pip install -r requirements.txt`
+
+### Troubleshooting Virtual Environment
+- **If activation fails:** Re-run the setup script (`./setup_venv.sh` or `./setup_python.sh`)
+- **If packages are missing:** Activate venv and run `pip install -r requirements.txt`
+- **If venv is corrupted:** Delete the `venv/` folder and re-run setup script
 
 ## Using the Application
 
@@ -221,6 +316,13 @@ The system will:
 - Transcripts: `static/uploaded_videos/transcripts/`
 - Heart rate data: `static/uploaded_videos/hr_data/`
 - Analysis results: `static/uploaded_videos/scores/`
+
+### Version Control & Environment
+- **Virtual environments** (`venv/`, `env/`, etc.) are automatically excluded from git
+- **Cache files** (`__pycache__/`, `*.pyc`) are ignored
+- **User data** (`static/uploaded_videos/`) is excluded from version control
+- **API tokens** (`token.json`) are kept private
+- The `.gitignore` file ensures only source code is tracked
 
 ### Security
 - All data is stored locally

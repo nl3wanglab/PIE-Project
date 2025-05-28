@@ -1,3 +1,4 @@
+# Project-specific files
 output_audio.wav
 PIEA01_play.MP4
 model/
@@ -7,6 +8,69 @@ diarization_transcript.txt
 full_transcription.txt
 debug.log
 static/uploaded_videos
+
+# Python virtual environments (CRITICAL - should never be in version control)
+venv/
+env/
+ENV/
+.venv/
+.env/
+venv*/
+.python-version
+
+# Python cache and compiled files
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Python environments and configuration
+.env
+.envrc
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace
+
+# OS-specific files
 .DS_Store
 **/.DS_Store
+Thumbs.db
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Logs and databases
+*.log
+*.db
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+.pytest_cache/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# PyTorch/ML model files (unless specifically needed)
+*.pth
+*.pkl
+*.joblib
+
+# Documentation builds
+docs/_build/
