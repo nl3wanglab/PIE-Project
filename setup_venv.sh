@@ -15,7 +15,26 @@ fi
 
 # Check Python version
 PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2 | cut -d'.' -f1-2)
+PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d'.' -f1)
+PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d'.' -f2)
+
 echo "🐍 Found Python $PYTHON_VERSION"
+
+# Check for compatibility issues
+if [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 12 ]; then
+    echo "⚠️  WARNING: Python 3.12+ detected!"
+    echo "   This project has compatibility issues with Python 3.12+ due to PyTorch dependencies."
+    echo "   We recommend using Python 3.10 or 3.11 for best compatibility."
+    echo "   You may encounter installation or runtime errors."
+    echo ""
+    read -p "Continue anyway? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "❌ Installation cancelled. Please use Python 3.8-3.11."
+        echo "Run ./setup_python.sh to install Python 3.11.7 automatically."
+        exit 1
+    fi
+fi
 
 # Check if virtual environment exists
 if [ -d "venv" ]; then
